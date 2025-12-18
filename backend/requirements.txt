@@ -1,0 +1,53 @@
+# FastAPI and ASGI server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+fastmcp>=0.2.0
+
+# CrewAI and LangChain
+crewai>=0.1.0
+langchain>=0.0.335,<0.0.336
+langchain-community>=0.0.13
+
+# LLM support
+llama-cpp-python>=0.2.27
+
+# Database and vector search
+supabase>=2.10.0
+pgvector>=0.2.4
+
+# Environment and utilities
+python-dotenv>=1.0.0
+pydantic>=2.5.3
+
+# PDF generation and reporting
+markdown>=3.5.1
+weasyprint>=60.0
+jinja2>=3.1.0
+
+# HTTP and async
+httpx>=0.24.0
+aiofiles>=23.0.0
+requests>=2.31.0
+
+# Data processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Web scraping and search
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+duckduckgo-search>=4.0.0
+
+# Patent data sources
+patent-client>=4.0.0
+
+# Clinical trials data
+pytrials>=0.2.0
+
+# Trade data (UN Comtrade)
+comtradeapicall>=1.2.0
+
+# PDF processing for internal documents
+pypdf>=3.0.0
+pdfplumber>=0.10.0

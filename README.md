@@ -134,11 +134,7 @@ Open http://localhost:3000 and ask:
 
 ---
 
-<<<<<<< HEAD
-## � MCP Server Integration
-=======
 ##   MCP Server Integration
->>>>>>> 44da8afde132de9e4ca20d2d3a58c972f143952a
 
 PharmaAI exposes all agents as **Model Context Protocol (MCP)** tools, enabling integration with:
 - ✅ **Claude Desktop** 
@@ -176,11 +172,7 @@ PharmaAI exposes all agents as **Model Context Protocol (MCP)** tools, enabling 
 
 ---
 
-<<<<<<< HEAD
-## �📊 Decision Logic
-=======
 ##  📊 Decision Logic
->>>>>>> 44da8afde132de9e4ca20d2d3a58c972f143952a
 
 The Master Agent applies intelligent decision-making:
 

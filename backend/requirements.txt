@@ -2,12 +2,11 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.6
-fastmcp>=0.2.0
+fastmcp>=2.0.0,<3.0.0
 
-# CrewAI and LangChain
-crewai>=0.1.0
-langchain>=0.0.335,<0.0.336
-langchain-community>=0.0.13
+# Agent orchestration and chat UI
+langgraph>=0.2.0
+chainlit>=1.0.0
 
 # LLM support
 llama-cpp-python>=0.2.27

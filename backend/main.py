@@ -42,7 +42,7 @@ app = FastAPI(
 # Initialize MCP Server
 mcp = FastMCP("PharmaAI MCP Server")
 
-# Configure CORS for Next.js frontend
+# Configure CORS for the legacy frontend and browser-based API clients
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -1,298 +1,274 @@
-"""
-Master Agent: Conversation Orchestrator
-Coordinates Worker Agents, applies decision logic, and synthesizes findings
-"""
-from typing import Dict, List, Any
-from crewai import Agent, Task, Crew
-import json
+"""LangGraph-based orchestration for the PharmaAI research workflow."""
+
+from operator import or_
+from typing import Annotated, Any, Dict, List, Optional, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+
+class ResearchState(TypedDict, total=False):
+    """State shared by the research graph nodes."""
+
+    user_query: str
+    conversation_history: List[Dict[str, str]]
+    molecule: Optional[str]
+    disease: Optional[str]
+    findings: Annotated[Dict[str, Any], or_]
+    synthesis: Dict[str, Any]
+    decision: str
+    reasoning: str
+    confidence_score: int
+    report_url: Optional[str]
 
 
 class MasterAgent:
-    """
-    Master Agent orchestrates the entire research workflow:
-    1. Interprets user intent
-    2. Decomposes into research tasks
-    3. Invokes Worker Agents in logical order
-    4. Applies decision logic (market attractiveness, patent FTO, clinical saturation)
-    5. Synthesizes findings and triggers report generation
-    """
-    
+    """Coordinates specialist agents as a deterministic, inspectable graph."""
+
+    RESEARCH_STEPS = (
+        "iqvia",
+        "patent",
+        "clinical_trials",
+        "exim",
+        "internal_knowledge",
+        "web_intelligence",
+    )
+
     def __init__(self, llm_config: Dict[str, Any]):
-        """
-        Initialize Master Agent with LLM configuration
-        Args:
-            llm_config: Configuration for the LLM (Mistral local or API)
-        """
         self.llm_config = llm_config
-        self.worker_agents = {}
+        self.worker_agents: Dict[str, Any] = {}
         self.decision_thresholds = {
-            "min_market_size_million_usd": 50,  # Minimum market size to be attractive
-            "max_patent_risk_score": 7,  # Patent risk above 7/10 is blocking
-            "max_clinical_saturation": 15,  # More than 15 active trials = saturated
-            "min_cagr_percent": 3  # Minimum growth rate
+            "min_market_size_million_usd": 50,
+            "max_patent_risk_score": 7,
+            "max_clinical_saturation": 15,
+            "min_cagr_percent": 3,
         }
-    
-    def register_worker_agent(self, name: str, agent: Any):
-        """Register a Worker Agent"""
+        self.graph = self._build_graph()
+
+    def register_worker_agent(self, name: str, agent: Any) -> None:
+        """Register a specialist or report-generation agent."""
         self.worker_agents[name] = agent
-    
-    async def process_query(self, user_query: str, conversation_history: List[Dict] = None) -> Dict[str, Any]:
-        """
-        Main orchestration logic
-        
-        Args:
-            user_query: User's natural language prompt
-            conversation_history: Previous messages in the conversation
-            
-        Returns:
-            Dict containing:
-                - decision: GO/NO-GO/PARTIAL
-                - reasoning: Explanation of decision
-                - findings: Aggregated research results
-                - report_url: PDF report link (if generated)
-        """
-        
-        # Step 1: Parse user intent (extract molecule name, research goals)
-        intent = self._parse_user_intent(user_query)
-        
-        # Step 2: Plan research workflow
-        workflow = self._plan_research_workflow(intent)
-        
-        # Step 3: Execute Worker Agents in sequence
-        findings = {}
-        decision_flags = {
-            "market_attractive": False,
-            "patents_clear": False,
-            "clinical_viable": False
-        }
-        
-        for step in workflow:
-            agent_name = step["agent"]
-            if agent_name not in self.worker_agents:
-                findings[agent_name] = {"error": f"Agent {agent_name} not registered"}
-                continue
-            
-            # Invoke Worker Agent
-            agent_result = await self.worker_agents[agent_name].execute(
-                molecule=intent.get("molecule"),
-                disease=intent.get("disease"),
-                context=findings  # Pass previous findings for context
-            )
-            findings[agent_name] = agent_result
-            
-            # Apply decision logic after each critical agent
-            if agent_name == "iqvia":
-                # Skip evaluation if agent returned an error
-                if "error" not in agent_result:
-                    decision_flags["market_attractive"] = self._evaluate_market_attractiveness(agent_result)
-                    if not decision_flags["market_attractive"]:
-                        # Early stop: Market too small/unattractive
-                        return self._build_rejection_response(
-                            reason="Market size too small or low growth rate",
-                            findings=findings
-                        )
-                else:
-                    # IQVIA unavailable - continue without market data
-                    decision_flags["market_attractive"] = True  # Don't block on missing data
-                    findings["_decision_note"] = "IQVIA market data unavailable - proceeding without market size validation"
-            
-            elif agent_name == "patent":
-                # Skip evaluation if agent returned an error
-                if "error" not in agent_result:
-                    decision_flags["patents_clear"] = self._evaluate_patent_landscape(agent_result)
-                    if not decision_flags["patents_clear"]:
-                        # Deprioritize but don't hard stop
-                        findings["_decision_note"] = "Patent landscape shows high FTO risk"
-                else:
-                    # Patent data unavailable - continue without patent validation
-                    decision_flags["patents_clear"] = True  # Don't block on missing data
-            
-            elif agent_name == "clinical_trials":
-                # Skip evaluation if agent returned an error
-                if "error" not in agent_result:
-                    decision_flags["clinical_viable"] = self._evaluate_clinical_viability(agent_result)
-                    if not decision_flags["clinical_viable"]:
-                        findings["_decision_note"] = "Clinical space appears saturated"
-                else:
-                    # Clinical trials data unavailable - continue without clinical validation
-                    decision_flags["clinical_viable"] = True  # Don't block on missing data
-        
-        # Step 4: Synthesize findings
-        synthesis = self._synthesize_findings(findings, decision_flags)
-        
-        # Step 5: Generate report
-        report_result = await self.worker_agents["report_generator"].execute(
-            synthesis=synthesis,
-            raw_findings=findings
+
+    async def process_query(
+        self,
+        user_query: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """Run the research graph and return its final decision and findings."""
+        result = await self.graph.ainvoke(
+            {
+                "user_query": user_query,
+                "conversation_history": conversation_history or [],
+                "findings": {},
+            }
         )
-        
-        # Step 6: Return final decision
         return {
+            "decision": result["decision"],
+            "reasoning": result["reasoning"],
+            "findings": result["findings"],
+            "synthesis": result["synthesis"]["summary"],
+            "report_url": result.get("report_url"),
+            "confidence_score": result["confidence_score"],
+        }
+
+    def _build_graph(self):
+        builder = StateGraph(ResearchState)
+        builder.add_node("parse_intent", self._parse_intent_node)
+
+        for agent_name in self.RESEARCH_STEPS:
+            builder.add_node(
+                agent_name,
+                self._make_research_node(agent_name),
+            )
+
+        builder.add_node("synthesize", self._synthesize_node)
+        builder.add_node("generate_report", self._report_node)
+        builder.add_edge(START, "parse_intent")
+
+        previous = "parse_intent"
+        for agent_name in self.RESEARCH_STEPS:
+            builder.add_edge(previous, agent_name)
+            previous = agent_name
+
+        builder.add_edge(previous, "synthesize")
+        builder.add_edge("synthesize", "generate_report")
+        builder.add_edge("generate_report", END)
+        return builder.compile()
+
+    async def _parse_intent_node(self, state: ResearchState) -> Dict[str, Any]:
+        intent = self._parse_user_intent(
+            state["user_query"],
+            state.get("conversation_history", []),
+        )
+        return {"molecule": intent["molecule"], "disease": intent["disease"]}
+
+    def _make_research_node(self, agent_name: str):
+        async def run_agent(state: ResearchState) -> Dict[str, Any]:
+            agent = self.worker_agents.get(agent_name)
+            if agent is None:
+                return {
+                    "findings": {
+                        agent_name: {"error": f"Agent {agent_name} not registered"}
+                    }
+                }
+
+            result = await agent.execute(
+                molecule=state.get("molecule"),
+                disease=state.get("disease"),
+                context=state.get("findings", {}),
+            )
+            return {"findings": {agent_name: result}}
+
+        return run_agent
+
+    def _synthesize_node(self, state: ResearchState) -> Dict[str, Any]:
+        findings = state.get("findings", {})
+        checks = {
+            "market_attractive": self._evaluate_market_attractiveness(
+                findings.get("iqvia", {})
+            ),
+            "patents_clear": self._evaluate_patent_landscape(
+                findings.get("patent", {})
+            ),
+            "clinical_viable": self._evaluate_clinical_viability(
+                findings.get("clinical_trials", {})
+            ),
+        }
+        synthesis = self._synthesize_findings(findings, checks)
+        return {
+            "synthesis": synthesis,
             "decision": synthesis["decision"],
             "reasoning": synthesis["reasoning"],
-            "findings": findings,
-            "synthesis": synthesis["summary"],
-            "report_url": report_result.get("pdf_url"),
-            "confidence_score": synthesis["confidence"]
+            "confidence_score": synthesis["confidence"],
         }
-    
-    def _parse_user_intent(self, query: str) -> Dict[str, Any]:
-        """
-        Extract key information from user query
-        Example: "Find repurposing opportunities for Montelukast in asthma"
-        Returns: {"molecule": "Montelukast", "disease": "asthma", "goal": "repurposing"}
-        """
-        # Simple keyword extraction (in production, use NER or LLM-based extraction)
-        intent = {
-            "molecule": None,
-            "disease": None,
-            "goal": "repurposing",
-            "raw_query": query
-        }
-        
-        # Basic extraction logic (can be enhanced with spaCy NER)
-        query_lower = query.lower()
-        
-        # Common molecule patterns
-        if "montelukast" in query_lower:
-            intent["molecule"] = "Montelukast"
-        elif "metformin" in query_lower:
-            intent["molecule"] = "Metformin"
-        elif "aspirin" in query_lower:
-            intent["molecule"] = "Aspirin"
-        
-        # Disease extraction
-        if "asthma" in query_lower:
-            intent["disease"] = "asthma"
-        elif "diabetes" in query_lower:
-            intent["disease"] = "diabetes"
-        elif "respiratory" in query_lower:
-            intent["disease"] = "respiratory diseases"
-        
+
+    async def _report_node(self, state: ResearchState) -> Dict[str, Any]:
+        report_agent = self.worker_agents.get("report_generator")
+        if report_agent is None:
+            return {"report_url": None}
+
+        report_result = await report_agent.execute(
+            synthesis=state["synthesis"],
+            raw_findings=state.get("findings", {}),
+        )
+        return {"report_url": report_result.get("pdf_url")}
+
+    def _parse_user_intent(
+        self, query: str, conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Optional[str]]:
+        def extract(text: str) -> Dict[str, Optional[str]]:
+            text_lower = text.lower()
+            return {
+                "molecule": next(
+                    (
+                        name
+                        for name in ("Montelukast", "Metformin", "Aspirin")
+                        if name.lower() in text_lower
+                    ),
+                    None,
+                ),
+                "disease": next(
+                    (
+                        name
+                        for name, term in (
+                            ("asthma", "asthma"),
+                            ("diabetes", "diabetes"),
+                            ("respiratory diseases", "respiratory"),
+                        )
+                        if term in text_lower
+                    ),
+                    None,
+                ),
+            }
+
+        intent = extract(query)
+        if intent["molecule"] is None or intent["disease"] is None:
+            for message in reversed(conversation_history or []):
+                if message.get("role") != "user":
+                    continue
+                previous_intent = extract(message.get("content", ""))
+                for key in ("molecule", "disease"):
+                    if intent[key] is None:
+                        intent[key] = previous_intent[key]
+                if intent["molecule"] is not None and intent["disease"] is not None:
+                    break
         return intent
-    
-    def _plan_research_workflow(self, intent: Dict[str, Any]) -> List[Dict[str, str]]:
-        """
-        Define the sequence of Worker Agents to invoke
-        """
-        # Standard workflow for drug repurposing
-        workflow = [
-            {"agent": "iqvia", "priority": "critical"},
-            {"agent": "patent", "priority": "critical"},
-            {"agent": "clinical_trials", "priority": "high"},
-            {"agent": "exim", "priority": "medium"},
-            {"agent": "internal_knowledge", "priority": "medium"},
-            {"agent": "web_intelligence", "priority": "low"},
-        ]
-        return workflow
-    
-    def _evaluate_market_attractiveness(self, market_data: Dict) -> bool:
-        """
-        Decision Logic: Is the market attractive enough?
-        Checks: Market size, growth rate, competition
-        """
-        try:
-            market_size = market_data.get("market_size_usd_million", 0)
-            cagr = market_data.get("cagr_percent", 0)
-            
-            if market_size < self.decision_thresholds["min_market_size_million_usd"]:
-                return False
-            if cagr < self.decision_thresholds["min_cagr_percent"]:
-                return False
-            
-            return True
-        except Exception:
-            return True  # Default to continue if data incomplete
-    
-    def _evaluate_patent_landscape(self, patent_data: Dict) -> bool:
-        """
-        Decision Logic: Is there Freedom to Operate?
-        Checks: Active patents, FTO risk score
-        """
-        try:
-            fto_risk_score = patent_data.get("fto_risk_score", 5)  # 1-10 scale
-            
-            if fto_risk_score > self.decision_thresholds["max_patent_risk_score"]:
-                return False
-            
-            return True
-        except Exception:
-            return True
-    
-    def _evaluate_clinical_viability(self, clinical_data: Dict) -> bool:
-        """
-        Decision Logic: Is the clinical space too saturated?
-        Checks: Number of active trials, phase distribution
-        """
-        try:
-            active_trials = clinical_data.get("total_active_trials", 0)
-            
-            if active_trials > self.decision_thresholds["max_clinical_saturation"]:
-                return False
-            
-            return True
-        except Exception:
-            return True
-    
-    def _synthesize_findings(self, findings: Dict, decision_flags: Dict) -> Dict[str, Any]:
-        """
-        Synthesize all Worker Agent findings into a coherent summary
-        """
-        # Determine overall decision
-        if all(decision_flags.values()):
+
+    def _evaluate_market_attractiveness(
+        self, market_data: Dict[str, Any]
+    ) -> Optional[bool]:
+        if market_data.get("error"):
+            return None
+
+        market_size = market_data.get("market_size_usd_million")
+        cagr = market_data.get("cagr_percent")
+        if market_size is None or cagr is None:
+            return None
+
+        return (
+            market_size >= self.decision_thresholds["min_market_size_million_usd"]
+            and cagr >= self.decision_thresholds["min_cagr_percent"]
+        )
+
+    def _evaluate_patent_landscape(
+        self, patent_data: Dict[str, Any]
+    ) -> Optional[bool]:
+        if patent_data.get("error") or patent_data.get("fto_risk_score") is None:
+            return None
+        return (
+            patent_data["fto_risk_score"]
+            <= self.decision_thresholds["max_patent_risk_score"]
+        )
+
+    def _evaluate_clinical_viability(
+        self, clinical_data: Dict[str, Any]
+    ) -> Optional[bool]:
+        if (
+            clinical_data.get("error")
+            or clinical_data.get("total_active_trials") is None
+        ):
+            return None
+        return (
+            clinical_data["total_active_trials"]
+            <= self.decision_thresholds["max_clinical_saturation"]
+        )
+
+    def _synthesize_findings(
+        self, findings: Dict[str, Any], checks: Dict[str, Optional[bool]]
+    ) -> Dict[str, Any]:
+        if checks["market_attractive"] is False:
+            decision = "NO_GO"
+            confidence = 70
+        elif all(value is True for value in checks.values()):
             decision = "GO"
             confidence = 85
-        elif decision_flags["market_attractive"] and decision_flags["patents_clear"]:
-            decision = "PARTIAL_GO"
-            confidence = 65
         else:
-            decision = "NO_GO"
-            confidence = 40
-        
-        # Build reasoning
-        reasoning_parts = []
-        
-        if decision_flags["market_attractive"]:
-            reasoning_parts.append("✓ Market shows attractive size and growth")
-        else:
-            reasoning_parts.append("✗ Market too small or low growth")
-        
-        if decision_flags["patents_clear"]:
-            reasoning_parts.append("✓ Patent landscape favorable for FTO")
-        else:
-            reasoning_parts.append("✗ Patent risks identified")
-        
-        if decision_flags["clinical_viable"]:
-            reasoning_parts.append("✓ Clinical space has room for innovation")
-        else:
-            reasoning_parts.append("✗ Clinical space highly saturated")
-        
+            decision = "REVIEW"
+            confidence = 40 + 15 * sum(value is not None for value in checks.values())
+
+        labels = {
+            "market_attractive": "Market",
+            "patents_clear": "Patent",
+            "clinical_viable": "Clinical",
+        }
+        reasoning = " | ".join(
+            f"{labels[key]}: "
+            + (
+                "favorable"
+                if value is True
+                else "risk identified"
+                if value is False
+                else "insufficient data"
+            )
+            for key, value in checks.items()
+        )
+        summary_lines = [
+            f"**{name.upper()} Analysis:**\n{result}"
+            for name, result in findings.items()
+        ]
         return {
             "decision": decision,
-            "reasoning": " | ".join(reasoning_parts),
+            "reasoning": reasoning,
             "confidence": confidence,
-            "summary": self._build_summary_text(findings)
-        }
-    
-    def _build_summary_text(self, findings: Dict) -> str:
-        """Build a human-readable summary of all findings"""
-        summary_lines = []
-        
-        for agent_name, result in findings.items():
-            if agent_name.startswith("_"):
-                continue
-            summary_lines.append(f"\n**{agent_name.upper()} Analysis:**")
-            summary_lines.append(str(result))
-        
-        return "\n".join(summary_lines)
-    
-    def _build_rejection_response(self, reason: str, findings: Dict) -> Dict[str, Any]:
-        """Build response for early rejection"""
-        return {
-            "decision": "NO_GO",
-            "reasoning": f"Early stop: {reason}",
-            "findings": findings,
-            "synthesis": f"Research terminated early due to: {reason}",
-            "report_url": None,
-            "confidence_score": 30
+            "summary": "\n\n".join(summary_lines),
+            "evidence_status": checks,
         }

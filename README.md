@@ -22,20 +22,20 @@ Pharmaceutical companies need to identify drug repurposing opportunities faster.
 
 ## 🏗️ Architecture
 
-### Master Agent (Orchestrator)
+### Research Workflow (LangGraph)
 - Interprets user queries
-- Decomposes research into tasks
+- Runs explicit, inspectable research nodes for market, patents, trials, trade, internal knowledge, and web research
 - Applies **decision logic**:
-  - ❌ Stops if market unattractive
+  - Preserves unavailable data as unknown instead of treating it as a negative result
   - ⚠️ Flags if patents block FTO
   - ⚠️ Warns if clinical space saturated
-- Synthesizes findings into GO/NO-GO recommendations
+- Synthesizes findings into preliminary GO/NO-GO/REVIEW assessments
 
-### Worker Agents (7 Specialized Agents)
+### Research Nodes (7 Specialized Agents)
 
 | Agent | Data Source | Responsibility | Output |
 |-------|-------------|----------------|--------|
-| **IQVIA Insights** | ZenRows web scraping | Market size, CAGR, competition | Tables, graphs, attractiveness score |
+| **Market Insights** | IQVIA (commercial access required) | Market size, CAGR, competition | Unavailable until an authorized data source is configured |
 | **EXIM Trends** | UN Comtrade API | Import/export data by country | Trade volumes, sourcing risk assessment |
 | **Patent Landscape** | USPTO/EPO via patent_client | Patent search & FTO analysis | Active patents, FTO score, expiry timelines |
 | **Clinical Trials** | ClinicalTrials.gov (pytrials) | Trial pipeline analysis | Active trials, phase distribution, repurposing signals |
@@ -48,15 +48,15 @@ Pharmaceutical companies need to identify drug repurposing opportunities faster.
 ## 🚀 Tech Stack
 
 **Core Framework:**
-- **Frontend**: Next.js 16 (React 19, TypeScript, Tailwind CSS)
+- **Chat UI**: Chainlit
 - **Backend**: FastAPI (Python 3.9+)
-- **Agent Framework**: CrewAI + MCP (Model Context Protocol)
+- **Agent Framework**: LangGraph + MCP (Model Context Protocol)
 - **LLM**: Mistral 7B GGUF (local)
 - **Vector Store**: Supabase PostgreSQL with `pgvector`
 - **MCP Server**: Fast MCP integration for AI assistant access
 
 **Real Data Sources:**
-- **IQVIA**: ZenRows API (web scraping)
+- **IQVIA**: Licensed commercial access required; not connected in this prototype
 - **Trade Data**: UN Comtrade API (comtradeapicall)
 - **Patents**: USPTO/EPO (patent_client library)
 - **Clinical Trials**: ClinicalTrials.gov (pytrials)
@@ -92,23 +92,17 @@ cp .env.example .env
 ```
 
 **Required API Keys** (for real data sources):
-- **ZenRows API**: For IQVIA web scraping (already provided in example)
 - **UN Comtrade API**: Get free key at https://comtradeplus.un.org/ (optional)
 - **Supabase**: For vector database (pgvector)
+
+IQVIA requires licensed access and is not currently connected to an IQVIA API; market results are reported as unavailable. Other data adapters can also return unavailable when their upstream API or dependencies are missing. Treat this project as a research prototype, not a source of medical or legal advice.
 
 **Optional APIs** (free, no keys required):
 - **USPTO/EPO Patents**: patent_client uses public APIs
 - **ClinicalTrials.gov**: pytrials uses free public API
 - **DuckDuckGo Search**: No API key needed
 
-### 3. Install Frontend Dependencies
-
-```bash
-cd frontend
-npm install
-```
-
-### 4. Run Backend
+### 3. Run the FastAPI and MCP backend
 
 ```bash
 cd backend
@@ -117,18 +111,18 @@ python main.py
 
 Backend runs on http://localhost:8000
 
-### 5. Run Frontend
+### 4. Run the Chainlit chat UI in a second terminal
 
 ```bash
-cd frontend
-npm run dev
+cd backend
+chainlit run chainlit_app.py --host 127.0.0.1 --port 8001
 ```
 
-Frontend runs on http://localhost:3000
+Chainlit runs on http://localhost:8001
 
-### 6. Try It Out!
+### 5. Try It Out!
 
-Open http://localhost:3000 and ask:
+Open http://localhost:8001 and ask:
 - "Find repurposing opportunities for Montelukast"
 - "Analyze market potential for Metformin"
 
@@ -190,9 +184,9 @@ The Master Agent applies intelligent decision-making:
 - ✓ Indication diversity suggests repurposing potential
 
 **Final Decision:**
-- **GO**: All checks pass (Confidence: 85%)
-- **PARTIAL_GO**: Market + Patents favorable (Confidence: 65%)
-- **NO_GO**: Critical failures (Confidence: <40%)
+- **GO**: All three checks have supporting data and pass (Confidence: 85%)
+- **NO_GO**: Market thresholds fail on available data
+- **REVIEW**: Evidence is missing or patent/clinical risks need expert assessment
 
 ---
 
@@ -213,9 +207,10 @@ Pharma_AI_Agent/
 │   ├── services/
 │   │   ├── supabase_client.py     # Vector DB
 │   │   └── embedding_service.py   # Embeddings
-│   ├── main.py                    # FastAPI server
+│   ├── main.py                    # FastAPI and MCP server
+│   ├── chainlit_app.py            # Chainlit chat interface
 │   └── requirements.txt
-├── frontend/
+├── frontend/                      # Legacy Next.js UI; not required to run
 │   ├── app/
 │   │   ├── components/
 │   │   │   └── ChatUI.tsx         # Chat interface
@@ -230,11 +225,11 @@ Pharma_AI_Agent/
 ## 🔥 Key Features
 
 ✅ **Multi-Agent Orchestration** - 7 specialized agents work in harmony  
-✅ **Real Data Integration** - Production-ready APIs (ZenRows, Comtrade, USPTO, ClinicalTrials.gov, DuckDuckGo)  
-✅ **Decision Intelligence** - Automatic GO/NO-GO with reasoning  
+✅ **Data-source adapters** - ClinicalTrials.gov, UN Comtrade, patent, and web research integrations
+✅ **Decision support** - Evidence-aware GO/NO-GO/REVIEW with missing-data caveats
 ✅ **RAG with pgvector** - Semantic search over internal documents  
-✅ **Mock Mode** - Runs without external APIs for demos/testing  
-✅ **Real-time Chat UI** - Conversational responses with markdown rendering  
+✅ **Mock Mode** - Selected components support mock behavior for demos/testing
+✅ **Real-time Chat UI** - Chainlit interface; the legacy Next.js UI is optional
 ✅ **PDF Reports** - Professional PDF generation with WeasyPrint  
 
 ---
@@ -249,23 +244,20 @@ PharmaAI supports two operating modes:
 ```env
 USE_MOCK_DATA=true
 ```
-- Uses pre-loaded sample data for Montelukast, Metformin, Aspirin
-- No API keys required
-- Instant responses
-- Perfect for demonstrations and development
+- Enables mock behavior in selected components; not every research adapter currently honors this setting
+- Adapters can return synthetic, unavailable, or live results depending on their implementation and configuration
+- Check each finding's data source before using it
 
-**Real Data Mode** (Production - for actual research):
+**Real Data Mode** (experimental; not a production-ready configuration):
 ```env
 USE_MOCK_DATA=false
-ZENROWS_API_KEY=your_key_here
 COMTRADE_SUBSCRIPTION_KEY=your_key_here
 SUPABASE_URL=your_supabase_url
 SUPABASE_ANON_KEY=your_supabase_key
 ```
-- Fetches live data from real sources
-- Requires API keys (see .env.example)
-- Longer response times
-- Accurate, up-to-date information
+- Attempts configured data sources and requires valid API keys where applicable
+- Missing integrations or upstream failures may result in unavailable findings
+- Validate the date, provenance, and accuracy of every result independently
 
 ### Individual Agent Data Sources
 
@@ -273,7 +265,7 @@ Each agent can independently use real or mock data:
 
 | Agent | Real Data Source | API Key Required? | Free Tier Available? |
 |-------|------------------|-------------------|----------------------|
-| IQVIA | ZenRows web scraping | ✅ Yes | ✅ Yes (limited) |
+| IQVIA | Licensed IQVIA access (not implemented) | Commercial access | — |
 | EXIM | UN Comtrade API | ✅ Yes | ✅ Yes (500 requests/hour) |
 | Patent | patent_client (USPTO/EPO) | ❌ No | ✅ Yes (unlimited) |
 | Clinical Trials | pytrials (ClinicalTrials.gov) | ❌ No | ✅ Yes (unlimited) |
@@ -289,15 +281,15 @@ Each agent can independently use real or mock data:
 
 **Agent Orchestration:**
 1. **Master Agent** → Extract molecule: "Montelukast"
-2. **IQVIA Agent** → Market size: $850M, CAGR: 5.2% ✓
-3. **Patent Agent** → FTO risk: 6.5/10 ✓
-4. **Clinical Trials Agent** → 8 active trials ✓
+2. **Market node** → Reports unavailable until licensed IQVIA data is configured
+3. **Patent node** → Reports source findings or an explicit unavailable status
+4. **Clinical Trials node** → Reports returned trials with their source status
 5. **EXIM Agent** → Trade analysis
 6. **Internal KB Agent** → Search internal docs
 7. **Web Intelligence** → Recent publications
 8. **Report Generator** → PDF with all findings
 
-**Decision:** **GO** (Confidence: 85%)
+**Decision:** **REVIEW** when required evidence is missing; the app does not infer a GO recommendation from unavailable data.
 
 ---
 

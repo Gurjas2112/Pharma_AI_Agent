@@ -1,0 +1,47 @@
+[
+  {
+    "name": "complete favorable evidence",
+    "findings": {
+      "iqvia": {"market_size_usd_million": 120, "cagr_percent": 4.2},
+      "patent": {"fto_risk_score": 3},
+      "clinical_trials": {"total_active_trials": 8}
+    },
+    "expected_decision": "GO"
+  },
+  {
+    "name": "market below threshold",
+    "findings": {
+      "iqvia": {"market_size_usd_million": 20, "cagr_percent": 4.2},
+      "patent": {"fto_risk_score": 3},
+      "clinical_trials": {"total_active_trials": 8}
+    },
+    "expected_decision": "NO_GO"
+  },
+  {
+    "name": "market source unavailable",
+    "findings": {
+      "iqvia": {"error": "market source unavailable"},
+      "patent": {"fto_risk_score": 3},
+      "clinical_trials": {"total_active_trials": 8}
+    },
+    "expected_decision": "REVIEW"
+  },
+  {
+    "name": "patent risk requires expert review",
+    "findings": {
+      "iqvia": {"market_size_usd_million": 120, "cagr_percent": 4.2},
+      "patent": {"fto_risk_score": 9},
+      "clinical_trials": {"total_active_trials": 8}
+    },
+    "expected_decision": "REVIEW"
+  },
+  {
+    "name": "clinical space appears saturated",
+    "findings": {
+      "iqvia": {"market_size_usd_million": 120, "cagr_percent": 4.2},
+      "patent": {"fto_risk_score": 3},
+      "clinical_trials": {"total_active_trials": 18}
+    },
+    "expected_decision": "REVIEW"
+  }
+]

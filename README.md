@@ -248,6 +248,17 @@ USE_MOCK_DATA=true
 - Adapters can return synthetic, unavailable, or live results depending on their implementation and configuration
 - Check each finding's data source before using it
 
+### Decision Policy Evaluation
+
+Run the deterministic fixture benchmark from `backend/`:
+
+```bash
+python -m evaluation.evaluate_decision_policy
+python -m unittest discover -s tests -v
+```
+
+The report includes expected-decision accuracy and synthesis latency on synthetic fixtures. It evaluates the evidence decision policy only; it is not an LLM benchmark, trained-model evaluation, or validation of clinical or patent conclusions.
+
 **Real Data Mode** (experimental; not a production-ready configuration):
 ```env
 USE_MOCK_DATA=false
@@ -272,6 +283,10 @@ Each agent can independently use real or mock data:
 | Web Intelligence | DuckDuckGo Search | ❌ No | ✅ Yes (unlimited) |
 | Internal KB | Supabase pgvector | ✅ Yes | ✅ Yes (500MB free) |
 | Report Generator | WeasyPrint (local) | ❌ No | ✅ Yes (unlimited) |
+
+### AI Apprentice JD Fit
+
+This project demonstrates Python APIs, Git-based development, LLM/agent workflows, embeddings and RAG, and a conversational UI. It does not currently train or fine-tune a supervised or deep-learning model, and the fixture benchmark measures decision-policy behavior rather than model quality. Pair it with a separate scikit-learn, PyTorch, or TensorFlow project that shows dataset preparation, a baseline, relevant evaluation metrics, and an error analysis. Do not describe this project as production-deployed or as clinically validated.
 
 ---
 

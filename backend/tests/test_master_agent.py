@@ -2,6 +2,7 @@ import asyncio
 import unittest
 
 from agents.master_agent import MasterAgent
+from evaluation.evaluate_decision_policy import CASES_PATH, evaluate_cases
 
 
 class FakeAgent:
@@ -70,6 +71,16 @@ class MasterAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(synthesis["decision"], "REVIEW")
+
+    def test_decision_policy_benchmark_fixtures_pass(self):
+        import json
+
+        with CASES_PATH.open(encoding="utf-8") as cases_file:
+            report = evaluate_cases(json.load(cases_file))
+
+        self.assertEqual(report["cases"], 5)
+        self.assertEqual(report["passed"], report["cases"])
+        self.assertEqual(report["accuracy"], 1.0)
 
     def test_known_failed_market_threshold_returns_no_go(self):
         graph = MasterAgent(llm_config={})

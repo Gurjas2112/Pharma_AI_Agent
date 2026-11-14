@@ -34,8 +34,9 @@ def health() -> dict:
 
 
 @app.get("/iqvia/market", dependencies=[Depends(_api_key)])
-def iqvia(molecule: str | None = None, therapy_area: str | None = None, region: str = "India"):
-    return data.iqvia_market(molecule, therapy_area, region)
+def iqvia(molecule: str | None = None, therapy_area: str | None = None, region: str = "India",
+          indications: str | None = None):
+    return data.iqvia_market(molecule, therapy_area, region, indications)
 
 
 @app.get("/exim/trade", dependencies=[Depends(_api_key)])

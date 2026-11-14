@@ -54,7 +54,7 @@ DOMAIN_HINTS = re.compile(
     r"molecule|drug|repurpos|indication|disease|patent|trial|market|iqvia|exim|api\b|formulation|"
     r"dosage|therap|pharma|clinical|fto|generic|cagr|competition|patient|import|export|report|"
     r"guideline|mechanism|moa|unmet|portfolio|respiratory|oncology|cardio|diabet|asthma|copd|"
-    r"tablet|injection|inhal|paediatric|pediatric|biosimilar|regulatory|fda|cdsco|ema|hello|hi\b|help",
+    r"tablet|injection|inhal|paediatric|pediatric|biosimilar|regulatory|fda|cdsco|ema|hello|hi\b|help|remember|memory|history|forget",
     re.I,
 )
 
@@ -80,7 +80,9 @@ def scan_input(text: str, max_chars: int = 4000) -> GuardResult:
     if any(p.search(text) for p in _HARM):
         reasons.append("harmful-use request")
         risk += 1.0
-    if not reasons and not DOMAIN_HINTS.search(text) and len(text.split()) > 6:
+    mostly_ascii = sum(ch.isascii() for ch in text) >= 0.8 * max(len(text), 1)
+    # the keyword scope check is English-only; other languages are scoped by the LLM planner instead
+    if not reasons and mostly_ascii and not DOMAIN_HINTS.search(text) and len(text.split()) > 6:
         reasons.append("off-topic for pharmaceutical portfolio research")
         risk += 0.6
     return GuardResult(allowed=risk < 0.6, reasons=reasons, risk=min(risk, 1.0), sanitized=text)

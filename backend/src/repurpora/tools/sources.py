@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 import httpx
@@ -44,9 +45,10 @@ def _mock_get(path: str, params: dict[str, Any], fallback) -> dict[str, Any]:
 
 
 @cached("iqvia")
-def iqvia_market(molecule: str | None = None, therapy_area: str | None = None, region: str = "India"):
-    return _mock_get("/iqvia/market", {"molecule": molecule, "therapy_area": therapy_area, "region": region},
-                     mock.iqvia_market)
+def iqvia_market(molecule: str | None = None, therapy_area: str | None = None, region: str = "India",
+                 indications: str | None = None):
+    return _mock_get("/iqvia/market", {"molecule": molecule, "therapy_area": therapy_area, "region": region,
+                                       "indications": indications}, mock.iqvia_market)
 
 
 @cached("exim")
@@ -61,7 +63,35 @@ def uspto_patents(molecule: str, indication: str | None = None):
 
 @cached("profile")
 def molecule_profile(molecule: str):
-    return _mock_get("/molecule/profile", {"molecule": molecule}, mock.molecule_profile)
+    """Curated profile, or - for any other molecule - a profile enriched from LIVE ClinicalTrials.gov
+    conditions so candidate indications are real-world rather than placeholders."""
+    prof = _mock_get("/molecule/profile", {"molecule": molecule}, mock.molecule_profile)
+    if prof.get("curated"):
+        return prof
+    try:
+        trials = clinical_trials(molecule)
+        conds = [t.get("condition", "").split(",")[0].strip() for t in trials.get("trials", [])]
+        counts: dict[str, int] = {}
+        label: dict[str, str] = {}
+        for c in conds:
+            if not c or "synthetic" in c.lower() or c.lower() in ("healthy", "healthy volunteers"):
+                continue
+            key = (re.findall(r"[a-z]+", c.lower()) or [c.lower()])[0]  # merge "COVID-19" / "COVID" / "Covid-19 Infection"
+            counts[key] = counts.get(key, 0) + 1
+            label.setdefault(key, c)
+        ranked = sorted(((label[k], n) for k, n in counts.items()), key=lambda kv: -kv[1])
+        if ranked and trials.get("_transport") == "live":
+            top = ranked[0][1]
+            prof["approved"] = ["See product label (not in curated set)"]
+            prof["candidates"] = [(c, round(0.35 + 0.4 * (1 - n / max(top, 1)), 2),
+                                   f"{n} registered trial(s) on ClinicalTrials.gov") for c, n in ranked[:5]]
+            prof["moa"] = "See literature (molecule outside curated set)"
+            prof["innovation"] = (f"Screen {molecule} for the least-crowded indication among {ranked[0][0]}"
+                                  + (f" and {ranked[1][0]}" if len(ranked) > 1 else "") + "; validate with web evidence")
+            prof["enriched_from"] = "ClinicalTrials.gov v2 (live)"
+    except Exception as exc:
+        log.info("profile enrichment failed for %s: %s", molecule, type(exc).__name__)
+    return prof
 
 
 # --------------------------- ClinicalTrials.gov v2 (live) -------------------

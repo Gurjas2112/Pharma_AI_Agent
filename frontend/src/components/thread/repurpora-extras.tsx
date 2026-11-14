@@ -21,6 +21,10 @@ export const SAMPLE_PROMPTS = [
     prompt: "Check the patent landscape and freedom-to-operate risk for colchicine in cardiovascular secondary prevention.",
   },
   {
+    title: "Your research memory",
+    prompt: "What do you remember about my research so far?",
+  },
+  {
     title: "Dosage-form innovation",
     prompt: "Is there an innovative dosage-form opportunity for budesonide in eosinophilic esophagitis in India?",
   },
@@ -70,13 +74,14 @@ export function ChatToolbar() {
         variant="ghost"
         size="sm"
         title="Upload an internal PDF for the Internal Knowledge agent"
+        aria-label="Upload an internal PDF"
         onClick={() => fileRef.current?.click()}
         disabled={uploading}
       >
         {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <FileUp className="size-4" />}
         <span className="hidden md:inline">Upload PDF</span>
       </Button>
-      <a href="/" title="Home" className="p-2 rounded-md hover:bg-gray-100">
+      <a href="/" title="Home" aria-label="Home" className="p-2 rounded-md hover:bg-gray-100">
         <Home className="size-4" />
       </a>
       {email && (
@@ -84,7 +89,7 @@ export function ChatToolbar() {
           {email}
         </span>
       )}
-      <Button variant="ghost" size="sm" onClick={signOut} title="Sign out" data-testid="sign-out">
+      <Button variant="ghost" size="sm" onClick={signOut} title="Sign out" aria-label="Sign out" data-testid="sign-out">
         <LogOut className="size-4" />
       </Button>
     </div>

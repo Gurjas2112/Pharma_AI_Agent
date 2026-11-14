@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     env_mode: str = "development"
     log_level: str = "INFO"
 
+    # --- LLM provider: "ollama" (self-hosted, default) or "openai" (any OpenAI-compatible endpoint:
+    #     vLLM, LM Studio, Groq, Together, OpenAI ...). Lets the system run on machines without a GPU.
+    llm_provider: str = "ollama"
+    openai_base_url: str | None = None
+    openai_api_key: str | None = None
+    embed_provider: str = "ollama"  # pgvector index is 768-d; use a 768-d model if you switch providers
+
     # --- LLM (Ollama, hosted on AWS EC2 in prod / local GPU container in proto)
     ollama_base_url: str = "http://localhost:11434"
     ollama_proxy_token: str | None = None  # bearer token enforced by Caddy proxy
@@ -40,6 +47,8 @@ class Settings(BaseSettings):
     llm_num_ctx: int = 8192
     llm_keep_alive: str = "30m"
     llm_timeout_s: float = 180.0
+
+    default_region: str = "India"  # used when neither the query nor the user's memory names a region
 
     # --- data sources ------------------------------------------------------
     mock_api_url: str = "http://localhost:8081"

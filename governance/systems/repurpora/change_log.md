@@ -8,3 +8,6 @@
 | 2026-11-14 | Evidence coverage gate 0.80 -> 0.75 | 3B judge + strict sentence splitter over-triggered redrafts | golden-set run |
 | 2026-11-14 | Off-topic guard risk 0.5 -> 0.6 (now blocks) | Unit test showed off-topic requests passing | backend/tests/test_units.py |
 | 2026-11-14 | Synthetic patent generator: older compound patents, fewer active secondaries | Off-patent generics were showing FTO 10/10 | API e2e run |
+| 2026-11-14 | Post-hoc citation attribution + routing floor + section-aware synthesis prompt | v1 golden set: evidence coverage 0.29, Q04 mis-routed | evals/results/baseline_v1.md vs latest.md |
+| 2026-11-14 | Memory layer v2: versioned facts, stale flags, relevance ranking, region profile, "show"/"forget" commands | Memory audit: overwrites lost history; no user control | backend/tests/test_graph.py |
+| 2026-11-14 | Universal coverage: any molecule (live CT.gov enrichment), 11 canonical regions, OpenAI-compatible provider option, non-English queries | Prototype only covered 8 curated molecules and India/US | backend/tests/test_units.py |

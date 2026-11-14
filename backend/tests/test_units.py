@@ -160,3 +160,25 @@ def test_routing_floor_for_molecule_assessments():
     from repurpora.nodes.core import heuristic_plan
 
     assert {"iqvia", "patent", "clinical_trials"} <= set(heuristic_plan("Assess budesonide dosage forms").workers)
+
+
+def test_region_canonicalisation():
+    from repurpora.regions import canonical, detect
+
+    assert detect("launch in the United States") == "US"
+    assert detect("market across Europe") == "EU"
+    assert detect("no geography here") is None
+    assert canonical("usa") == "US" and canonical(None, "Global") == "Global"
+
+
+def test_iqvia_scales_by_region():
+    from repurpora.agents.workers import run_worker
+
+    india = run_worker("iqvia", {"therapy_area": "Respiratory", "region": "India"}, with_note=False)
+    us = run_worker("iqvia", {"therapy_area": "Respiratory", "region": "US"}, with_note=False)
+    assert us.metrics["top_market_usd_mn"] > india.metrics["top_market_usd_mn"]
+
+
+def test_non_english_query_not_flagged_off_topic():
+    g = scan_input("मेटफॉर्मिन के लिए भारत में नए संकेतों का विश्लेषण करें कृपया अभी")
+    assert g.allowed

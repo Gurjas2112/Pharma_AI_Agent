@@ -53,13 +53,14 @@ def _tbl(title: str, df: pd.DataFrame, ev_ids: list[str] | None = None, limit: i
 
 def run_iqvia(plan: dict[str, Any], tb: ToolBudget) -> WorkerResult:
     mol, ta, region = plan.get("molecule"), plan.get("therapy_area"), plan.get("region") or "India"
-    raw = tb.call("iqvia_market", sources.iqvia_market, mol, ta if not mol else None, region)
+    prof = sources.molecule_profile(mol) if mol else None
+    inds = "|".join(c[0] for c in prof["candidates"]) if prof and not prof.get("curated") else None
+    raw = tb.call("iqvia_market", sources.iqvia_market, mol, ta if not mol else None, region, inds)
     df = pd.DataFrame(raw["therapy_dynamics"])
     res = WorkerResult(agent="iqvia")
     if df.empty:
         res.error = "no market rows"
         return res
-    prof = sources.molecule_profile(mol) if mol else None
     approved = {a.lower() for a in (prof or {}).get("approved", [])}
     df["new_indication"] = ~df.disease.str.lower().isin(approved)
     df = df.sort_values(["new_indication", "burden_to_competition"], ascending=[False, False])
@@ -88,8 +89,8 @@ def run_iqvia(plan: dict[str, Any], tb: ToolBudget) -> WorkerResult:
                                              f"(5y CAGR {cagr * 100:.1f}%)."))
     if prof:
         for cand, unmet, note in prof.get("candidates", []):
-            res.evidence.append(Evidence(agent="iqvia", source="Repurposing analyst profile (synthetic)",
-                                         trust="synthetic", title=f"Candidate: {cand}",
+            res.evidence.append(Evidence(agent="iqvia", source=prof.get("enriched_from") or "Repurposing analyst profile (synthetic)",
+                                         trust="registry" if prof.get("enriched_from") else "synthetic", title=f"Candidate: {cand}",
                                          snippet=f"Unmet-need score {unmet:.2f}. {note}. MoA: {prof.get('moa')}."))
         if prof.get("innovation"):
             res.evidence.append(Evidence(agent="iqvia", source="Repurposing analyst profile (synthetic)",

@@ -35,7 +35,7 @@ class ResearchPlan(BaseModel):
     molecule: str | None = Field(default=None, description="Primary molecule (INN, lowercase) if any")
     indication: str | None = Field(default=None, description="Target disease/indication if stated")
     therapy_area: str | None = Field(default=None, description="e.g. Respiratory, Metabolic")
-    region: str = Field(default="India", description="Market/geography of interest")
+    region: str | None = Field(default=None, description="Market/geography named by the user, else null")
     angle: str | None = Field(default=None, description="new indication | dosage form | patient population")
     workers: list[WorkerName] = Field(default_factory=list, description="Worker agents to run")
     sub_queries: dict[str, str] = Field(default_factory=dict, description="worker -> focused sub-question")

@@ -143,7 +143,6 @@ DISEASE_BURDEN_INDIA = [
     ("Rosacea", "Dermatology", 7.5, 54, 8.7, 8, 0.70),
 ]
 
-US_SCALE = {"market": 6.5, "patients": 0.28}  # rough US/India multipliers for demo
 
 
 def _seed(*parts: str) -> random.Random:
@@ -179,10 +178,13 @@ def molecule_profile(molecule: str) -> dict[str, Any]:
 # --------------------------- IQVIA ------------------------------------------
 
 def iqvia_market(molecule: str | None = None, therapy_area: str | None = None,
-                 region: str = "India") -> dict[str, Any]:
+                 region: str = "India", indications: str | None = None) -> dict[str, Any]:
     region = region or "India"
-    scale = 1.0 if region.lower() == "india" else US_SCALE["market"]
-    pscale = 1.0 if region.lower() == "india" else US_SCALE["patients"]
+    from repurpora.regions import canonical, profile
+
+    region = canonical(region)
+    rp = profile(region)
+    scale, pscale, cscale = float(rp["market"]), float(rp["patients"]), float(rp["competition"])
     rows = []
     prof = molecule_profile(molecule) if molecule else None
     wanted = {c[0] for c in prof["candidates"]} | set(prof["approved"]) if prof else set()
@@ -196,20 +198,24 @@ def iqvia_market(molecule: str | None = None, therapy_area: str | None = None,
             "patients_mn": round(pts * pscale, 2),
             "market_usd_mn": round(mkt * scale, 1),
             "cagr_5y_pct": cagr,
-            "competitors": comp if region.lower() == "india" else max(1, int(comp * 0.6)),
+            "competitors": max(1, int(round(comp * cscale))),
             "generic_share": gshare,
-            "burden_to_competition": round(pts / max(comp, 1), 2),
+            "burden_to_competition": round(pts * pscale / max(1, int(round(comp * cscale))), 2),
         })
-    if prof and not rows:  # unknown molecule: synthesize
+    if prof and not rows:  # molecule outside curated set: synthesize market rows for its indications
         r = _seed(prof["molecule"], region)
-        for c in prof["candidates"]:
+        names = [x.strip() for x in (indications or "").split("|") if x.strip()] or [c[0] for c in prof["candidates"]]
+        for name in names[:6]:
+            pts = round(r.uniform(0.2, 20) * pscale, 2)
+            comp = max(1, int(round(r.randint(1, 40) * cscale)))
             rows.append({
-                "disease": c[0], "therapy_area": prof["therapy_area"],
-                "patients_mn": round(r.uniform(0.2, 20), 2),
+                "disease": name, "therapy_area": prof["therapy_area"],
+                "patients_mn": pts,
                 "market_usd_mn": round(r.uniform(10, 400) * scale, 1),
                 "cagr_5y_pct": round(r.uniform(2, 14), 1),
-                "competitors": r.randint(1, 40), "generic_share": round(r.uniform(.3, .95), 2),
-                "burden_to_competition": 0.0,
+                "competitors": comp, "generic_share": round(r.uniform(.3, .95), 2),
+                "burden_to_competition": round(pts / comp, 2),
+                "synthetic_market": True,
             })
     mol_sales = None
     if prof:
@@ -242,7 +248,7 @@ def exim_trade(molecule: str, country: str = "India") -> dict[str, Any]:
     rows = sorted(
         ({"partner": p, "share": round(s, 3), "import_tonnes": round(total_t * s, 1),
           "avg_price_usd_kg": round(r.uniform(8, 140), 2)}
-         for p, s in zip(EXPORTERS, shares, strict=True) if p != country),
+         for p, s in zip(EXPORTERS, shares, strict=True) if p not in {country, {"US": "USA"}.get(country)}),
         key=lambda x: -x["share"],
     )
     trend = [{"year": YEAR - 4 + i, "imports_tonnes": round(total_t * (0.82 + 0.05 * i + r.uniform(-.03, .03)), 1),

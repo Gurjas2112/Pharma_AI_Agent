@@ -45,6 +45,25 @@ flowchart TD
   FN --> MW[memory_write] --> E
 ```
 
+## Memory layer
+
+| Layer | Scope | Store | Notes |
+|---|---|---|---|
+| Short-term (session) | one thread | Aegra Postgres checkpointer | full message and state history, time travel, thread list in the UI |
+| Context compaction | one thread | state `summary` | older turns summarised once the token budget is exceeded |
+| Long-term facts | one user | LangGraph Store `("users", uid, "memories")` | one fact per molecule × indication, provenance (thread, report), **versioned** history (max 5), hard cap 40, `stale` flag after 30 days |
+| User profile | one user | Store `("users", uid, "profile")` | learned usual region and recurring molecules; it becomes the planner's default region |
+| User control | one user | planner commands | "what do you remember?" lists everything; "forget my history" erases it, and the erasure is audited |
+
+## Universal coverage
+
+| Dimension | Behaviour |
+|---|---|
+| Any molecule | Curated profiles for 8 showcase molecules. Any other molecule gets candidate indications from **live ClinicalTrials.gov** conditions (deduplicated). |
+| Any region | 11 canonical regions (India, US, EU, UK, China, Japan, Brazil, Africa, SE Asia, Middle East, Global) detected from free text. Scaled market tables. |
+| Any LLM host | `LLM_PROVIDER=ollama` (self-hosted, default) or `openai` (any OpenAI-compatible API: vLLM, LM Studio, Groq, Together, OpenAI), so it can run without a GPU |
+| Any language | Users can ask in any language. The planner works in English; the brief is written in the user's language. The English-only keyword scope check is skipped for non-Latin scripts. |
+
 ## Design decisions
 
 | Decision | Choice | Why |

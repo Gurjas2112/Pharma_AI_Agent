@@ -28,7 +28,7 @@ from repurpora.evidence import (
 )
 from repurpora.guardrails.checks import dlp_redact, scan_input
 from repurpora.llm import get_llm
-from repurpora.mock_apis.data import MOLECULES, molecule_profile
+from repurpora.mock_apis.data import MOLECULES
 from repurpora.observability import audit
 from repurpora.settings import get_settings
 from repurpora.state import ALL_WORKERS, RESET, ResearchPlan, ResearchState, WorkerTask
@@ -82,9 +82,6 @@ def guard_input(state: ResearchState, config: RunnableConfig) -> Command[Literal
 
 # ------------------------------------------------------------- memory -------
 
-MEM_CAP = 40
-
-
 def _store():
     try:
         from langgraph.config import get_store
@@ -95,36 +92,21 @@ def _store():
 
 
 def memory_load(state: ResearchState, config: RunnableConfig) -> dict:
+    from repurpora import memory
+
     _, owner = _cfg(config)
-    store = _store()
-    facts: list[dict] = []
-    if store and owner:
-        try:
-            facts = [it.value for it in store.search(("users", owner, "memories"), limit=10)]
-        except Exception as exc:
-            log.debug("store search failed: %s", exc)
-    return {"memory": {"facts": facts}, "step_log": [f"memory_load: {len(facts)} facts"]}
+    mem = memory.load(_store(), owner, _last_user_text(state))
+    return {"memory": jsonable(mem), "step_log": [f"memory_load: {len(mem['facts'])} facts"]}
 
 
 def memory_write(state: ResearchState, config: RunnableConfig) -> dict:
+    from repurpora import memory
+
     thread, owner = _cfg(config)
-    store = _store()
-    plan, rep, sc = state.get("plan") or {}, state.get("report") or {}, state.get("scores") or {}
-    if not (store and owner and plan.get("molecule")):
-        return {}
-    try:
-        existing = store.search(("users", owner, "memories"), limit=MEM_CAP + 5)
-        if len(existing) >= MEM_CAP:  # hard cap: evict oldest
-            for it in sorted(existing, key=lambda i: i.updated_at)[: len(existing) - MEM_CAP + 1]:
-                store.delete(("users", owner, "memories"), it.key)
-        store.put(("users", owner, "memories"), f"{plan['molecule']}:{plan.get('indication') or 'any'}", {
-            "fact": f"Evaluated {plan['molecule']} for {plan.get('indication') or sc.get('best_opportunity')} "
-                    f"in {plan.get('region')}: {sc.get('decision')} (ML p={sc.get('ml_probability')})",
-            "molecule": plan["molecule"], "region": plan.get("region"),
-            "provenance": {"thread_id": thread, "report_id": rep.get("report_id")},
-        })
-    except Exception as exc:
-        log.debug("store put failed: %s", exc)
+    ok = memory.write_research(_store(), owner, thread, state.get("plan") or {}, state.get("scores") or {},
+                               state.get("report") or {})
+    if ok:
+        audit("memory_write", {"molecule": (state.get("plan") or {}).get("molecule")}, thread, owner)
     return {}
 
 
@@ -147,7 +129,10 @@ Rules:
 - Questions about a disease area without a molecule (e.g. "which respiratory diseases have low competition")
   need iqvia + web (+ internal), and set therapy_area.
 - intent=follow_up if the user asks about the previous answer/report; intent=chit_chat for greetings/help.
-- molecule must be a lowercase INN generic name or null. region defaults to India unless stated (US, EU...).
+- molecule must be a lowercase INN generic name (translate brand names to the generic) or null.
+- region: one of India, US, EU, UK, China, Japan, Brazil, Africa, Southeast Asia, Middle East, Global.
+  Use the region the user names; otherwise the user's usual region from memory; otherwise {default_region}.
+- The user may write in any language; plan in English.
 - Provide a focused sub_query for internal and web workers.
 Context from memory and prior conversation:
 {context}
@@ -164,7 +149,9 @@ def heuristic_plan(text: str) -> ResearchPlan:
     if not mol and (m := re.search(r"\b([a-z]{5,}(?:mab|nib|pril|sartan|statin|olol|mide|azole|cycline|formin|lukast|afil|sone|ine))\b", t)):
         mol = m.group(1)
     area = next((a.title() for a in _KNOWN_AREAS if a in t), None)
-    region = "US" if re.search(r"\b(us|usa|united states|america)\b", t) else "India"
+    from repurpora.regions import detect
+
+    region = detect(text)  # None -> planner applies the user's learned region or the configured default
     if re.fullmatch(r"\s*(hi|hello|hey|help|thanks|thank you)[!. ]*", t):
         return ResearchPlan(intent="chit_chat")
     workers = ALL_WORKERS if mol else ["iqvia", "web", "internal"]
@@ -175,16 +162,27 @@ def heuristic_plan(text: str) -> ResearchPlan:
 def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["worker", "follow_up", "__end__"]]:
     thread, owner = _cfg(config)
     text = _last_user_text(state)
-    mem = (state.get("memory") or {}).get("facts", [])
+    from repurpora import memory, regions
+
+    mem_state = state.get("memory") or {}
     prior = state.get("plan") or {}
+    # user control over long-term memory (handled deterministically, never by the LLM)
+    if memory.FORGET_RE.search(text):
+        n = memory.forget(_store(), owner)
+        audit("memory_forget", {"deleted": n}, thread, owner)
+        return Command(goto="__end__", update={"messages": [AIMessage(
+            f"🧹 Done - I erased {n} saved memory item(s). Your past threads remain in history until you delete them.")]})
+    if memory.SHOW_RE.search(text):
+        return Command(goto="__end__", update={"messages": [AIMessage(memory.render_for_user(_store(), owner))]})
+    preferred = (mem_state.get("profile") or {}).get("preferred_region")
+    default_region = preferred or get_settings().default_region
     ctx = []
     if state.get("summary"):
         ctx.append("Conversation summary: " + state["summary"])
     if prior:
         ctx.append(f"Previous plan: molecule={prior.get('molecule')}, indication={prior.get('indication')}, "
                    f"region={prior.get('region')}")
-    if mem:
-        ctx.append("User memory: " + " | ".join(f["fact"] for f in mem[:5]))
+    ctx += memory.context_lines(mem_state)
     plan: ResearchPlan
     try:
         llm = get_llm("primary").with_structured_output(ResearchPlan, method="json_schema")
@@ -196,6 +194,11 @@ def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["wo
         log.warning("structured planning failed (%s) -> heuristic planner", exc)
         plan = heuristic_plan(text)
     # deterministic post-validation (state machine owns the rules)
+    explicit = regions.detect(text)
+    plan.region = explicit or (regions.canonical(plan.region, default_region) if plan.region else default_region)
+    if not explicit and prior.get("region") and plan.intent == "research":
+        plan.region = prior["region"]  # follow-ups stay in the same market
+    region_explicit = explicit is not None
     if plan.molecule:
         plan.molecule = plan.molecule.strip().lower()
     if plan.intent == "research" and not plan.molecule and prior.get("molecule") and \
@@ -210,7 +213,7 @@ def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["wo
     if plan.intent == "research" and not plan.molecule:
         plan.workers = [w for w in plan.workers if w not in ("exim", "patent", "clinical_trials")] or ["iqvia", "web"]
     audit("plan", plan.model_dump(), thread, owner)
-    pd_ = plan.model_dump()
+    pd_ = {**plan.model_dump(), "region_explicit": region_explicit}
 
     if plan.intent in ("chit_chat", "out_of_scope"):
         return Command(goto="__end__", update={"messages": [AIMessage(_HELP)], "plan": pd_})
@@ -297,7 +300,9 @@ def scorer(state: ResearchState) -> dict:
     else:
         decision, conf = "NO_GO", 40
     # unmet need + evidence strength from curated profile / evidence mix
-    prof = molecule_profile(plan["molecule"]) if plan.get("molecule") else None
+    from repurpora.tools.sources import molecule_profile as enriched_profile
+
+    prof = enriched_profile(plan["molecule"]) if plan.get("molecule") else None
     unmet = 0.6
     target = plan.get("indication") or metrics.get("best_opportunity")
     if prof:
@@ -334,7 +339,8 @@ Use only ids that appear in the EVIDENCE REGISTER. Synthetic/mock sources must n
 
 Write GitHub markdown with EXACTLY these sections, in this order, and no others:
 {sections}
-Keep it under {words} words. Be specific and quantitative."""
+Keep it under {words} words. Be specific and quantitative.
+Write the brief in the same language as the user's question (section headings may stay in English)."""
 
 SECTION_SPEC = {
     "summary": "## Executive summary  (2-3 sentences: decision, ML probability, best opportunity)",

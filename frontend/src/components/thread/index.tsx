@@ -182,7 +182,7 @@ export function Thread() {
   );
 
   return (
-    <div className="flex w-full h-screen overflow-hidden">
+    <main className="flex w-full h-screen overflow-hidden" aria-label="Repurpora research chat">
       <div className="relative lg:flex hidden">
         <motion.div
           className="absolute h-full border-r bg-white overflow-hidden z-20"
@@ -231,6 +231,7 @@ export function Thread() {
                 <Button
                   className="hover:bg-gray-100"
                   variant="ghost"
+                  aria-label="Toggle research history"
                   onClick={() => setChatHistoryOpen((p) => !p)}
                 >
                   {chatHistoryOpen ? (
@@ -254,6 +255,7 @@ export function Thread() {
                   <Button
                     className="hover:bg-gray-100"
                     variant="ghost"
+                    aria-label="Toggle research history"
                     onClick={() => setChatHistoryOpen((p) => !p)}
                   >
                     {chatHistoryOpen ? (
@@ -362,7 +364,7 @@ export function Thread() {
                       The master agent plans the research, six specialist agents run in parallel, an ML model scores
                       the opportunity, and every claim is cited and archived as a PDF/Excel report.
                     </p>
-                    <div className="grid sm:grid-cols-2 gap-2 w-full max-w-3xl" data-testid="sample-prompts">
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 w-full max-w-3xl" data-testid="sample-prompts">
                       {SAMPLE_PROMPTS.map((p) => (
                         <button
                           key={p.title}
@@ -386,6 +388,7 @@ export function Thread() {
                     className="grid grid-rows-[1fr_auto] gap-2 max-w-3xl mx-auto"
                   >
                     <textarea
+                      aria-label="Research question"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -443,6 +446,6 @@ export function Thread() {
           />
         </StickToBottom>
       </motion.div>
-    </div>
+    </main>
   );
 }

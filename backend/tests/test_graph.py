@@ -85,3 +85,25 @@ def test_memory_written_with_provenance(graph):
     graph.invoke({"messages": [("user", "Assess budesonide repurposing in India")]}, _cfg("t5"))
     items = store.search(("users", "u1", "memories"))
     assert items and items[0].value["provenance"]["thread_id"] == "t5"
+
+
+def test_memory_versioning_profile_show_and_forget(graph):
+    store = graph.store
+    cfg = _cfg("t6")
+    graph.invoke({"messages": [("user", "Assess colchicine repurposing in Japan")]}, cfg)
+    graph.invoke({"messages": [("user", "Assess colchicine repurposing in Japan again")]}, _cfg("t7"))
+    item = store.get(("users", "u1", "memories"), "colchicine:any")
+    assert item.value["region"] == "Japan" and len(item.value["history"]) >= 1  # earlier verdict kept
+    prof = store.get(("users", "u1", "profile"), "profile").value
+    assert prof["preferred_region"] == "Japan"
+
+    shown = graph.invoke({"messages": [("user", "What do you remember about me?")]}, _cfg("t8"))
+    assert "colchicine" in shown["messages"][-1].content.lower()
+
+    # region default now comes from the learned profile when the query names none
+    out = graph.invoke({"messages": [("user", "Assess metformin repurposing opportunities")]}, _cfg("t9"))
+    assert out["plan"]["region"] == "Japan"
+
+    gone = graph.invoke({"messages": [("user", "Please forget my history")]}, _cfg("t10"))
+    assert "erased" in gone["messages"][-1].content
+    assert not store.search(("users", "u1", "memories"))

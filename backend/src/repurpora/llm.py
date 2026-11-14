@@ -53,14 +53,26 @@ _init_cache()
 
 
 @lru_cache(maxsize=8)
-def get_llm(role: Role = "primary", temperature: float | None = None, json_mode: bool = False) -> ChatOllama:
+def get_llm(role: Role = "primary", temperature: float | None = None, json_mode: bool = False):
+    """Chat model for a role. Provider-agnostic: Ollama (default) or any OpenAI-compatible API."""
     s = get_settings()
     model = s.llm_model_primary if role == "primary" else s.llm_model_fast
+    temp = s.llm_temperature if temperature is None else temperature
+    # hard output caps stop runaway generations (e.g. a small model looping inside a JSON string)
+    max_out = 400 if json_mode else (1400 if role == "primary" else 512)
+    if s.llm_provider.lower() in ("openai", "openai_compatible", "vllm"):
+        from langchain_openai import ChatOpenAI
+
+        kw = {"response_format": {"type": "json_object"}} if json_mode else {}
+        return ChatOpenAI(model=model, temperature=temp, base_url=s.openai_base_url, max_tokens=max_out,
+                          api_key=get_secret("OPENAI_API_KEY") or s.openai_api_key or "not-needed",
+                          timeout=s.llm_timeout_s, model_kwargs=kw, tags=[f"model:{model}", f"role:{role}"])
     return ChatOllama(
         model=model,
         base_url=s.ollama_base_url,
-        temperature=s.llm_temperature if temperature is None else temperature,
+        temperature=temp,
         num_ctx=s.llm_num_ctx,
+        num_predict=max_out,
         keep_alive=s.llm_keep_alive,
         format="json" if json_mode else None,
         client_kwargs=_client_kwargs(),
@@ -69,8 +81,13 @@ def get_llm(role: Role = "primary", temperature: float | None = None, json_mode:
 
 
 @lru_cache(maxsize=1)
-def get_embeddings() -> OllamaEmbeddings:
+def get_embeddings():
     s = get_settings()
+    if s.embed_provider.lower() in ("openai", "openai_compatible"):
+        from langchain_openai import OpenAIEmbeddings
+
+        return OpenAIEmbeddings(model=s.embed_model, base_url=s.openai_base_url, dimensions=s.embed_dim,
+                                api_key=get_secret("OPENAI_API_KEY") or s.openai_api_key or "not-needed")
     return OllamaEmbeddings(model=s.embed_model, base_url=s.ollama_base_url, client_kwargs=_client_kwargs())
 
 
@@ -78,6 +95,8 @@ def llm_available() -> bool:
     import httpx
 
     s = get_settings()
+    if s.llm_provider.lower() != "ollama":
+        return True
     try:
         r = httpx.get(f"{s.ollama_base_url.rstrip('/')}/api/tags", timeout=4,
                       headers=_client_kwargs().get("headers"))

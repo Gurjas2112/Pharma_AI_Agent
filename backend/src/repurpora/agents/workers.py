@@ -126,6 +126,7 @@ def run_exim(plan: dict[str, Any], tb: ToolBudget) -> WorkerResult:
     risk = "High" if top.share > 0.6 else "Medium" if top.share > 0.4 else "Low"
     dependency = partners[partners.share > 0.3].partner.tolist()
     res.metrics.update({"top_supplier": top.partner, "top_supplier_share": float(top.share),
+                        "n_suppliers": int((partners.share >= 0.05).sum()),
                         "supplier_hhi": round(hhi, 3), "sourcing_risk": risk,
                         "import_growth_pct": round((trend.imports_tonnes.iloc[-1] / trend.imports_tonnes.iloc[0] - 1) * 100, 1)})
     res.evidence.append(Evidence(agent="exim", source=raw["source"], trust="licensed_db",
@@ -203,6 +204,7 @@ def run_trials(plan: dict[str, Any], tb: ToolBudget) -> WorkerResult:
     indications = conds[conds != ""].value_counts()
     sponsors = df.sponsor.fillna("Unknown").value_counts().head(5)
     res.metrics.update({"total_trials": int(len(df)), "active_trials": n_active, "trial_saturation": sat,
+                        "phase3_trials": int(active.phase.fillna("").str.contains("PHASE3").sum()),
                         "distinct_indications": int(indications.size), "live_source": raw.get("_transport") == "live"})
     url = "https://clinicaltrials.gov/search?intr=" + mol if raw.get("_transport") == "live" else None
     res.evidence.append(Evidence(agent="clinical_trials", source=raw["source"],

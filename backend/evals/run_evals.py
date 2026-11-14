@@ -38,6 +38,9 @@ def run_one(g, case: dict) -> dict:
     final = str(st["messages"][-1].content)
     row = {"id": case["id"], "latency_s": round(lat, 1), "tokens_in": cb.totals["input_tokens"],
            "tokens_out": cb.totals["output_tokens"], "llm_calls": cb.totals["calls"]}
+    if case.get("expect_route") == "archive":
+        row["archive_route_ok"] = "research archive" in final.lower()
+        return row
     if case.get("expect_blocked"):
         row["blocked_ok"] = (st.get("guard") or {}).get("allowed") is False
         return row
@@ -84,6 +87,8 @@ def summarise(rows: list[dict]) -> dict:
         "tool_cache_hit_rate": round(hit_rate(), 3),
         "cache_stats": dict(STATS),
         "reports_archived": sum(r.get("report_archived", False) for r in research),
+        "archive_route_accuracy": (round(sum(r["archive_route_ok"] for r in rows if "archive_route_ok" in r)
+                                         / max(1, sum("archive_route_ok" in r for r in rows)), 3)),
     }
 
 

@@ -155,3 +155,25 @@ create policy feedback_owner_read on feedback for select to authenticated
 insert into storage.buckets (id, name, public)
 values ('reports', 'reports', false)
 on conflict (id) do nothing;
+
+-- ------------------------------------------------- Archive SQL agent (v2) ----
+-- Least-privilege role used by the text-to-SQL agent. Even if generated SQL bypassed the
+-- application validator, Postgres only lets this role SELECT the caller's own rows.
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'archive_reader') then
+    create role archive_reader nologin;
+  end if;
+end $$;
+grant archive_reader to current_user;
+grant usage on schema public to archive_reader;
+revoke all on all tables in schema public from archive_reader;
+grant select (report_id, created_at, query, molecule, indication, decision, confidence, ml_score,
+              evidence_coverage, owner) on reports to archive_reader;
+grant select (created_at, model, node, input_tokens, output_tokens, latency_ms, owner) on llm_usage to archive_reader;
+
+drop policy if exists archive_reader_own_reports on reports;
+create policy archive_reader_own_reports on reports for select to archive_reader
+  using (owner is not distinct from nullif(current_setting('repurpora.owner', true), ''));
+drop policy if exists archive_reader_own_usage on llm_usage;
+create policy archive_reader_own_usage on llm_usage for select to archive_reader
+  using (owner is not distinct from nullif(current_setting('repurpora.owner', true), ''));

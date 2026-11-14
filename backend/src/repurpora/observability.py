@@ -91,11 +91,13 @@ class UsageCallback(BaseCallbackHandler):
 
     def on_chat_model_start(self, serialized, messages, *, run_id, tags=None, metadata=None, **kw):
         model = (metadata or {}).get("ls_model_name") or (serialized or {}).get("kwargs", {}).get("model", "?")
-        node = (metadata or {}).get("langgraph_node", "?")
-        self._t[run_id] = (time.perf_counter(), str(model), str(node))
+        md = metadata or {}
+        node = md.get("langgraph_node", "?")
+        # LangGraph copies configurable keys (thread_id, user_id set by Aegra) into run metadata
+        self._t[run_id] = (time.perf_counter(), str(model), str(node), md.get("thread_id"), md.get("user_id"))
 
     def on_llm_end(self, response: LLMResult, *, run_id, **kw):
-        t0, model, node = self._t.pop(run_id, (time.perf_counter(), "?", "?"))
+        t0, model, node, thread, owner = self._t.pop(run_id, (time.perf_counter(), "?", "?", None, None))
         it = ot = 0
         for gens in response.generations:
             for g in gens:
@@ -105,7 +107,8 @@ class UsageCallback(BaseCallbackHandler):
         self.totals["input_tokens"] += it
         self.totals["output_tokens"] += ot
         self.totals["calls"] += 1
-        row = (str(run_id), self.thread_id, self.owner, model, node, it, ot, int((time.perf_counter() - t0) * 1000))
+        row = (str(run_id), self.thread_id or thread, self.owner or owner, model, node, it, ot,
+               int((time.perf_counter() - t0) * 1000))
         _bg(self._write, row)
 
     @staticmethod
@@ -114,7 +117,9 @@ class UsageCallback(BaseCallbackHandler):
             from repurpora.db import conn
 
             with conn() as c:
+                # owner resolved from Aegra's thread table when the run metadata does not carry it
                 c.execute("insert into llm_usage(run_id, thread_id, owner, model, node, input_tokens, output_tokens,"
-                          " latency_ms) values (%s,%s,%s,%s,%s,%s,%s,%s)", row)
+                          " latency_ms) values (%s,%s,coalesce(%s,(select user_id from thread where thread_id = %s)),"
+                          "%s,%s,%s,%s,%s)", (row[0], row[1], row[2], row[1], *row[3:]))
         except Exception:
             pass

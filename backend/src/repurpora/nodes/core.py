@@ -128,6 +128,8 @@ Rules:
   (a full molecule repurposing assessment uses all six).
 - Questions about a disease area without a molecule (e.g. "which respiratory diseases have low competition")
   need iqvia + web (+ internal), and set therapy_area.
+- intent=archive_query if the user asks about their OWN saved reports, past sessions or usage
+  (list / count / filter / compare archived reports, token usage) - no worker agents needed.
 - intent=follow_up if the user asks about the previous answer/report; intent=chit_chat for greetings/help.
 - molecule must be a lowercase INN generic name (translate brand names to the generic) or null.
 - region: one of India, US, EU, UK, China, Japan, Brazil, Africa, Southeast Asia, Middle East, Global.
@@ -159,7 +161,8 @@ def heuristic_plan(text: str) -> ResearchPlan:
                         workers=workers, sub_queries={"web": text[:200], "internal": text[:200]})
 
 
-def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["worker", "follow_up", "__end__"]]:
+def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["worker", "follow_up", "sql_agent",
+                                                                              "__end__"]]:
     thread, owner = _cfg(config)
     text = _last_user_text(state)
     from repurpora import memory, regions
@@ -174,6 +177,11 @@ def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["wo
             f"🧹 Done - I erased {n} saved memory item(s). Your past threads remain in history until you delete them.")]})
     if memory.SHOW_RE.search(text):
         return Command(goto="__end__", update={"messages": [AIMessage(memory.render_for_user(_store(), owner))]})
+    from repurpora.agents.sql_agent import ARCHIVE_RE
+
+    if ARCHIVE_RE.search(text):  # deterministic fast-path; the LLM planner can also choose archive_query
+        audit("plan", {"intent": "archive_query", "route": "regex"}, thread, owner)
+        return Command(goto="sql_agent", update={"step_log": ["planner: archive_query"]})
     preferred = (mem_state.get("profile") or {}).get("preferred_region")
     default_region = preferred or get_settings().default_region
     ctx = []
@@ -215,6 +223,8 @@ def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["wo
     audit("plan", plan.model_dump(), thread, owner)
     pd_ = {**plan.model_dump(), "region_explicit": region_explicit}
 
+    if plan.intent == "archive_query":
+        return Command(goto="sql_agent", update={"plan": pd_, "step_log": ["planner: archive_query (llm)"]})
     if plan.intent in ("chit_chat", "out_of_scope"):
         return Command(goto="__end__", update={"messages": [AIMessage(_HELP)], "plan": pd_})
     if plan.intent == "follow_up" and state.get("draft"):
@@ -317,9 +327,11 @@ def scorer(state: ResearchState) -> dict:
                               "unmet_need": round(unmet, 2), "evidence_strength": round(strength, 2),
                               "best_opportunity": target}
     try:
-        ml = predict(features_from_results(metrics, unmet, strength, reform))
-        scores.update({"ml_probability": ml["probability"], "ml_model": ml["model"], "ml_auc": ml["test_roc_auc"],
-                       "ml_drivers": ml["drivers"]})
+        ml = predict(features_from_results(metrics, unmet, strength, reform, plan=plan,
+                                           therapy_area=(prof or {}).get("therapy_area") or plan.get("therapy_area")))
+        scores.update({"ml_probability": ml["probability"], "ml_label": ml["label"], "ml_threshold": ml["threshold"],
+                       "ml_model": ml["model"], "ml_auc": ml["test_roc_auc"], "ml_drivers": ml["drivers"],
+                       "ml_imputed": ml["imputed_fields"]})
     except Exception as exc:
         log.warning("ml scorer failed: %s", exc)
         scores.update({"ml_probability": 0.0, "ml_model": "unavailable"})
@@ -376,7 +388,9 @@ def _compact_context(state: ResearchState) -> str:
     parts = []
     sc = state.get("scores", {})
     parts.append(f"DECISION: {sc.get('decision')} (rule confidence {sc.get('confidence')}%), "
-                 f"ML success probability {sc.get('ml_probability')} via {sc.get('ml_model')}; checks={sc.get('checks')}; "
+                 f"ML success probability {sc.get('ml_probability')} via calibrated {sc.get('ml_model')} "
+                 f"({'above' if sc.get('ml_label') else 'below'} the cost-based decision threshold {sc.get('ml_threshold')}; "
+                 f"inputs not observed and imputed: {', '.join(sc.get('ml_imputed') or []) or 'none'}); checks={sc.get('checks')}; "
                  f"unmet_need={sc.get('unmet_need')}; best_opportunity={sc.get('best_opportunity')}")
     if sc.get("candidates"):
         parts.append("CANDIDATE INDICATIONS (synthetic analyst profile): " +
@@ -559,6 +573,23 @@ def follow_up(state: ResearchState, config: RunnableConfig) -> dict:
     except Exception as exc:
         ans = f"(LLM unavailable: {type(exc).__name__})"
     text, _ = dlp_redact(ans)
+    return {"messages": [AIMessage(text)]}
+
+
+# ------------------------------------------------------------- sql agent ----
+
+def sql_agent(state: ResearchState, config: RunnableConfig) -> dict:
+    """Read-only, user-scoped text-to-SQL over the report archive (see agents/sql_agent.py)."""
+    from repurpora.agents.sql_agent import answer
+
+    thread, owner = _cfg(config)
+    try:
+        out = answer(_last_user_text(state), owner)
+        audit("sql_agent", {"sql": out["sql"], "rows": out["rows"], "source": out["source"]}, thread, owner)
+        text, _ = dlp_redact(out["markdown"])
+    except Exception as exc:
+        log.warning("sql agent failed: %s", exc)
+        text = "I couldn't query your report archive right now (database unavailable). Please try again shortly."
     return {"messages": [AIMessage(text)]}
 
 

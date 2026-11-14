@@ -53,6 +53,7 @@ The 5-slide journey in the PS maps as follows:
 | F9 | Synthesise with references | `synthesizer`: sectioned brief, every claim cites `[E#]` |
 | F10 | Report generator: PDF/Excel, download link in chat | `report`: ReportLab + matplotlib charts, openpyxl workbook, signed URLs |
 | F11 | Archive reports | Supabase Storage `reports/{user}/{id}`, `reports` table, S3 mirror |
+| F13 | Query the report archive from chat | `sql_agent`: user-scoped, read-only text-to-SQL with validator, `archive_reader` role and RLS, template fallback |
 | F12 | At least 10 strategic queries | `evals/golden_queries.jsonl` (11 strategic + 1 adversarial) |
 
 ## 5. Non-functional requirements
@@ -86,10 +87,11 @@ The 5-slide journey in the PS maps as follows:
 ## 8. Evaluation plan
 | Suite | Coverage |
 |---|---|
-| Unit and integration | `backend/tests` (37 tests: guardrails, evidence, chunking, workers, ML, graph routing with a fake LLM, LocalStack AWS) |
+| Unit and integration | `backend/tests` (79 tests: guardrails, evidence, chunking, workers, ML, graph routing with a fake LLM, LocalStack AWS) |
 | Golden set | `evals/run_evals.py`: routing P/R, molecule accuracy, coverage, citation accuracy, faithfulness, keyword groundedness, block rate, latency p50/p95, tokens, cache hit rate |
 | RAG | `evals/rag_bench.py`: fixed vs recursive vs parent-child, scored on Hit@k, MRR and nDCG |
-| ML | CV model selection plus hold-out ROC-AUC, PR-AUC, F1, Brier, calibration, over-fit gap |
+| ML | Out-of-time test, baselines (dummy + rule gate), CV search, calibration, cost-based threshold, bootstrap CI, learning curve, permutation importance, expected-output regression test (`tests/test_ml.py`) |
+| SQL agent | 15-case attack corpus, DB-level isolation test (`tests/test_sql_agent.py`) |
 
 ## 9. Production phase (deferred on purpose)
 1. Move Ollama to EC2 g4dn.xlarge (`infra/aws/ec2_ollama.sh`) with an Elastic IP and TLS via Caddy, or move to vLLM for continuous batching.

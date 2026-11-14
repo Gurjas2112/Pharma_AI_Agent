@@ -3,6 +3,7 @@
     START -> compact -> guard_input ─(blocked)→ END
                           └→ memory_load -> planner ─(chit-chat)→ END
                                                ├─(follow-up)→ follow_up -> END
+                                               ├─(archive question)→ sql_agent (read-only, user-scoped) -> END
                                                └─ Send × N → worker ─→ evidence_merge -> scorer
                                                     -> synthesizer <-> judge (≤1 redraft)
                                                     -> report -> finalize -> memory_write -> END
@@ -38,6 +39,7 @@ def build_graph(checkpointer=None, store=None):
     g.add_node("finalize", core.finalize)
     g.add_node("memory_write", core.memory_write)
     g.add_node("follow_up", core.follow_up)
+    g.add_node("sql_agent", core.sql_agent)
 
     g.add_edge(START, "compact")
     g.add_edge("compact", "guard_input")
@@ -50,6 +52,7 @@ def build_graph(checkpointer=None, store=None):
     g.add_edge("finalize", "memory_write")
     g.add_edge("memory_write", END)
     g.add_edge("follow_up", END)
+    g.add_edge("sql_agent", END)
     return g.compile(checkpointer=checkpointer, store=store, name="repurpora")
 
 

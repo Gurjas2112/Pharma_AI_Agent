@@ -29,8 +29,9 @@ def resettable(old: list | None, new: list | None) -> list:
 class ResearchPlan(BaseModel):
     """Master agent's decomposition of the user query (structured output)."""
 
-    intent: Literal["research", "chit_chat", "follow_up", "out_of_scope"] = Field(
-        description="research = needs data agents; follow_up = answer from prior report; chit_chat = greeting/help"
+    intent: Literal["research", "archive_query", "chit_chat", "follow_up", "out_of_scope"] = Field(
+        description="research = needs data agents; archive_query = question about the user's own saved "
+                    "reports/sessions/usage; follow_up = answer from prior report; chit_chat = greeting/help"
     )
     molecule: str | None = Field(default=None, description="Primary molecule (INN, lowercase) if any")
     indication: str | None = Field(default=None, description="Target disease/indication if stated")

@@ -34,6 +34,7 @@ flowchart TD
   ML --> PL{planner = Master agent<br/>structured ResearchPlan}
   PL -- chit-chat --> E
   PL -- follow-up --> FU[follow_up] --> E
+  PL -- archive question --> SQ[sql_agent<br/>read-only, user-scoped text-to-SQL] --> E
   PL -- "Send × N (parallel)" --> W1[iqvia] & W2[exim] & W3[patent] & W4[clinical_trials] & W5[internal RAG] & W6[web]
   W1 & W2 & W3 & W4 & W5 & W6 --> EM[evidence_merge<br/>dedupe, E# ids, sha256]
   EM --> SC[scorer<br/>rules + ML p(success)]
@@ -54,6 +55,36 @@ flowchart TD
 | Long-term facts | one user | LangGraph Store `("users", uid, "memories")` | one fact per molecule × indication, provenance (thread, report), **versioned** history (max 5), hard cap 40, `stale` flag after 30 days |
 | User profile | one user | Store `("users", uid, "profile")` | learned usual region and recurring molecules; it becomes the planner's default region |
 | User control | one user | planner commands | "what do you remember?" lists everything; "forget my history" erases it, and the erasure is audited |
+
+## Archive SQL agent (text-to-SQL over the user's own reports)
+
+Questions like *"list my GO reports for metformin"* or *"how many tokens did my sessions use this week?"* are
+routed (regex fast-path, or the LLM planner's `archive_query` intent) to `sql_agent`.
+
+| Layer | Control |
+|---|---|
+| What the LLM sees | Only two virtual tables, `my_reports` and `my_usage`, never real table names |
+| Application validator | Single SELECT; no DML/DDL, comments or `;`; physical and schema-qualified names rejected (comma joins, subqueries, UNIONs included); LIMIT capped at 50 |
+| Query wrapper | Server-side CTEs bind the virtual tables to `owner = %(owner)s` (a bound parameter) |
+| Database | `SET LOCAL ROLE archive_reader`: column-level SELECT grants on `reports`/`llm_usage` only, and **RLS** policies keyed on a transaction-local `repurpora.owner`. Even raw SQL can't read another user's rows, and `audit_log` is denied. |
+| Execution | READ ONLY transaction, 5 s statement timeout |
+| Fallback | Deterministic template queries when the LLM is down or its SQL is rejected |
+| Transparency | The SQL that ran is shown to the user in a collapsible block; each query is audited |
+
+## ML opportunity scorer pipeline
+
+`dataset.py` → `eda.py` → `features.py` → `train.py` → `predict.py`. The full write-up is in
+[`backend/src/repurpora/ml/reports/model_report.md`](../backend/src/repurpora/ml/reports/model_report.md).
+
+| Step | Detail |
+|---|---|
+| Split | out-of-time (test = assessments from 2023 on) |
+| Preprocessing | fitted inside the sklearn Pipeline on training folds only |
+| Model selection | baselines (prior dummy + the business-rule gate), RandomizedSearchCV over 3 model families, one-standard-error choice |
+| Calibration | sigmoid |
+| Threshold | cost-sensitive (FP = 2, FN = 1), chosen on out-of-fold training predictions |
+| Test | single held-out evaluation with a bootstrap CI |
+| Regression guard | the shipped model must reproduce `expected_test_predictions.csv` |
 
 ## Universal coverage
 

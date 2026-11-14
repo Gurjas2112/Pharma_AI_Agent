@@ -13,13 +13,21 @@ decisions. Every output is a draft for expert review.
 | Judge | qwen2.5 3B instruct | Faithfulness 1-5 + unsupported claims | Separate from the writer |
 | Opportunity scorer | scikit-learn LogisticRegression | p(success) + local drivers | Trained on **synthetic** data |
 | Embeddings | nomic-embed-text (768-d) | Hybrid RAG | pgvector HNSW + FTS + RRF |
+| Archive SQL agent | qwen2.5 7B (JSON) | Text-to-SQL over the user's own reports | Validator + `archive_reader` role + RLS; template fallback |
 
-## Opportunity scorer metrics (hold-out, synthetic data)
-5-fold CV ROC-AUC: logistic regression 0.796, random forest 0.781, gradient boosting 0.783.
-Selected model: logistic regression. Test ROC-AUC 0.803, PR-AUC 0.824, F1 0.771, Brier 0.180.
-Train-test AUC gap is -0.005, so there is no over-fitting.
-Label noise in the synthetic generator caps achievable AUC. The simpler model won on purpose: the latent function
-is close to linear in the transformed features.
+## Opportunity scorer metrics (v2 pipeline, out-of-time test 2023–2025, synthetic data)
+| Model | 5-fold CV ROC-AUC | Train AUC |
+|---|---|---|
+| Logistic regression (**selected**, one-SE rule) | 0.775 ± 0.013 | 0.789 |
+| Histogram gradient boosting | 0.766 ± 0.009 | 0.927 (over-fits) |
+| Random forest | 0.760 ± 0.012 | 0.881 |
+
+Test (n = 1,268):
+- ROC-AUC **0.776** (95% CI 0.752–0.802), PR-AUC 0.830, MCC 0.423, balanced accuracy 0.715.
+- Calibration: ECE 0.059 (sigmoid calibrated).
+- Decision cost (2·FP + FN): **507**, against **721** for the business-rule gate and 1,006 for an always-yes dummy.
+
+The threshold is cost-sensitive (0.66). Full report: `backend/src/repurpora/ml/reports/model_report.md`.
 
 ## Known limitations
 - Market, trade and patent data are synthetic mocks, as the problem statement requires. Clinical trials and web search are live.

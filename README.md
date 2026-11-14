@@ -18,7 +18,7 @@ A master agent fans out to market, trade, patent, clinical-trial, internal-RAG a
 <p align="center">
 <img alt="python" src="https://img.shields.io/badge/python-3.12-3776AB"/>
 <img alt="langgraph" src="https://img.shields.io/badge/LangGraph-1.2-1C3C3C"/>
-<img alt="tests" src="https://img.shields.io/badge/tests-41%20passing-2EA44F"/>
+<img alt="tests" src="https://img.shields.io/badge/tests-79%20passing-2EA44F"/>
 <img alt="deploy" src="https://img.shields.io/badge/deployed-Vercel%20%2B%20Railway-black"/>
 <img alt="license" src="https://img.shields.io/badge/license-MIT-blue"/>
 </p>
@@ -79,6 +79,8 @@ AWS emulated through LocalStack).
  7 ▼  Judge ───── checks every sentence has valid evidence; if coverage < 75 % it sends the brief back once
  8 ▼  Report ──── PDF + Excel → Supabase Storage (+ S3 mirror) → download links in chat
  9 ▼  Memory ──── saves the verdict with a link to the report (versioned, so old verdicts are kept)
+
+ Archive questions ("list my GO reports") skip steps 4–8 and go to a secure, read-only SQL agent instead.
 ```
 <sub>* Market, trade and patent sources are realistic **mock APIs**, as the problem statement specifies. Clinical trials and web search are **live**.</sub>
 
@@ -103,16 +105,39 @@ mis-routed. The fixes were **post-hoc citation attribution** (a citation is adde
 contains the claim's numbers and wording), a **routing floor** in code, and **section-aware prompts**.
 Full tables: [`baseline_v1.md`](backend/evals/results/baseline_v1.md) → [`latest.md`](backend/evals/results/latest.md).
 
-### ML opportunity scorer (scikit-learn, 4,000 synthetic projects, 5-fold CV)
+### ML opportunity scorer: a complete modelling workflow
 
-| Model | CV ROC-AUC |
-|---|---|
-| **Logistic regression (selected)** | **0.796 ± 0.019** |
-| Gradient boosting | 0.783 ± 0.021 |
-| Random forest | 0.781 ± 0.019 |
+The scorer follows a standard data-science workflow, end to end, in [`backend/src/repurpora/ml/`](backend/src/repurpora/ml):
 
-Hold-out ROC-AUC **0.803**, PR-AUC 0.824, F1 0.771, Brier 0.180. The train-test gap is −0.005, so there is no
-over-fitting. The simplest model won, and the README says so rather than forcing a fancier one.
+| Step | What was done | Artefact |
+|---|---|---|
+| 1. Data | 6,090 historical project assessments (synthetic export with real-world mess: missing values, unit typos, sentinels, duplicates, a leakage column) | [`DATASET_CARD.md`](backend/src/repurpora/ml/data/DATASET_CARD.md), `data/raw/` |
+| 2. EDA | Missingness and its mechanism, drift over time, skew, category effects, correlations, **single-feature leakage screen** (caught the post-launch sales column at AUC 1.00) | [`eda.md`](backend/src/repurpora/ml/reports/eda.md) |
+| 3. Cleaning | Dedupe, sentinel → missing, ×100 / ×1000 unit fixes, range checks, category normalisation, drop leakage and ID columns | [`features.py`](backend/src/repurpora/ml/features.py) |
+| 4. Feature engineering | Log transforms, burden per competitor, 5-year projected market, IP-window flag, phase-3 share, single-source supply risk, need × evidence | `features.py` |
+| 5. Preprocessing | Median imputation **with missing indicators**, winsorising, scaling, one-hot. All fitted inside the pipeline on training folds only (no leakage). | `features.py` |
+| 6. Split | **Out-of-time**: train on 2012–2022, test on 2023–2025 | `data/processed/train.csv`, `test.csv` |
+| 7. Model selection | Two baselines, then a hyperparameter search over three model families with 5-fold CV, and the **one-standard-error rule** | [`train.py`](backend/src/repurpora/ml/train.py) |
+| 8. Calibration and threshold | Sigmoid calibration; a **cost-sensitive** threshold (a false GO costs 2× a missed opportunity) chosen on out-of-fold training data | `train.py` |
+| 9. Evaluation | One held-out test pass with a bootstrap CI, calibration, confusion matrix, learning curve, permutation importance | [`model_report.md`](backend/src/repurpora/ml/reports/model_report.md) |
+| 10. Expected outputs | Recorded test-set predictions; a regression test proves the shipped model reproduces them | `data/processed/expected_test_predictions.csv`, [`tests/test_ml.py`](backend/tests/test_ml.py) |
+| 11. Serving | Pydantic input contract, imputed-field reporting, local drivers, used by the LangGraph scorer | [`predict.py`](backend/src/repurpora/ml/predict.py) |
+
+| Model (5-fold CV on 2012–2022) | CV ROC-AUC | Train ROC-AUC |
+|---|---|---|
+| **Logistic regression (selected)** | **0.775 ± 0.013** | 0.789 |
+| Histogram gradient boosting | 0.766 ± 0.009 | 0.927 (over-fits) |
+| Random forest | 0.760 ± 0.012 | 0.881 |
+
+| Out-of-time test (2023–2025, n = 1,268) | **ML model** | Business-rule gate (previous logic) | Always-yes baseline |
+|---|---|---|---|
+| ROC-AUC | **0.776** (95% CI 0.752–0.802) | 0.573 | 0.500 |
+| MCC | **0.42** | 0.15 | 0.00 |
+| Decision cost (2·FP + FN) | **507** | 721 | 1,006 |
+| Calibration error (ECE) | 0.059 | n/a | n/a |
+
+The model cuts decision cost by **30%** compared with the rules the app used before. The simpler model was chosen
+because the boosted trees over-fit without scoring better on unseen data.
 
 ### Retrieval (RAG) chunking benchmark
 
@@ -131,15 +156,15 @@ context budget.
 
 | Skill area | Where to look |
 |---|---|
-| **Build, train and evaluate ML models** | [`ml/opportunity_scorer.py`](backend/src/repurpora/ml/opportunity_scorer.py): pandas data generation and cleaning, stratified split, cross-validated model selection, ROC/PR-AUC, F1, Brier, calibration, over-fit check, permutation importance |
-| **LLMs: prompting, RAG, agentic workflows** | [`nodes/core.py`](backend/src/repurpora/nodes/core.py) (LangGraph master agent, JSON-schema planning, judge loop), [`rag/`](backend/src/repurpora/rag) (hybrid retrieval) |
+| **Build, train and evaluate ML models** | [`ml/`](backend/src/repurpora/ml): dataset card, EDA with leakage screen, cleaning, feature engineering, leakage-safe pipeline, out-of-time split, baselines, CV search, calibration, cost-sensitive threshold, bootstrap CI, expected-output regression test |
+| **LLMs: prompting, RAG, agentic workflows** | [`nodes/core.py`](backend/src/repurpora/nodes/core.py) (LangGraph master agent, JSON-schema planning, judge loop), [`rag/`](backend/src/repurpora/rag) (hybrid retrieval), [`agents/sql_agent.py`](backend/src/repurpora/agents/sql_agent.py) (secure text-to-SQL) |
 | **Clean, preprocess and analyse data** | pandas analytics in every agent ([`agents/workers.py`](backend/src/repurpora/agents/workers.py)): CAGR, HHI concentration, FTO scoring; PDF cleaning and chunking |
 | **Clean Python, tools and APIs** | Typed settings and Pydantic schemas, FastAPI mock-data service, Agent Protocol server, ruff-clean |
 | **Benchmark and experiment** | [`evals/`](backend/evals): golden-set v1→v2, chunking benchmark, latency, token and cache telemetry |
 | **Read research and apply it** | [`essential_docs/`](essential_docs) papers (DrugRAG, production RAG, AHP product selection) → evidence-gated RAG and selection criteria |
 | **Cloud and containers** | AWS (EC2 GPU IaC, S3, Secrets Manager, CloudWatch via LocalStack), Docker Compose (10 services), Railway, Vercel |
 | **Vector DBs, embeddings, LangChain** | Supabase pgvector (HNSW index), nomic embeddings, LangChain + LangGraph 1.x |
-| **Testing** | 41 pytest tests (unit, graph integration with a fake LLM, AWS emulator) + Playwright end-to-end recording |
+| **Testing** | 79 pytest tests (unit, ML workflow, SQL-agent attack corpus, graph integration with a fake LLM, AWS emulator) + Playwright end-to-end recording |
 
 ---
 
@@ -167,6 +192,21 @@ context budget.
 - Every fact is an `Evidence` record: id, agent, source, trust tier (registry, licensed DB, internal, web, synthetic), URL, timestamp and SHA-256.
 - The brief must cite `[E#]`. The judge measures **evidence coverage** and **citation accuracy**, and asks a second model for **faithfulness**.
 - Below 75 % coverage the brief is rewritten once, with the unsupported sentences listed.
+</details>
+
+<details><summary><b>🗂️ Ask questions about your saved reports (secure SQL agent)</b></summary>
+
+Ask *"List my GO reports for metformin"*, *"How many assessments did I run per decision?"* or *"How many tokens did my
+sessions use this week?"*. The master agent routes these to a **text-to-SQL agent** instead of the research agents.
+
+| Control | How |
+|---|---|
+| Hidden schema | The model only sees two virtual tables (`my_reports`, `my_usage`) |
+| Validator | Single read-only SELECT. DML/DDL, comments and real or schema-qualified table names are rejected, including comma joins, subqueries and UNIONs. LIMIT is capped. |
+| Database enforcement | Queries run as a least-privilege `archive_reader` role with **row-level security**. Even if a query slipped past the validator, Postgres only returns your rows. |
+| Execution limits | Read-only transaction, 5 s timeout |
+| Fallback and transparency | Safe template queries if the LLM fails; the SQL that ran is shown to you |
+| Testing | A 15-case attack corpus in [`tests/test_sql_agent.py`](backend/tests/test_sql_agent.py) |
 </details>
 
 <details><summary><b>🧠 Memory you can see and erase</b></summary>
@@ -264,7 +304,7 @@ cd backend && uv run python scripts/make_synthetic_internal_docs.py && uv run py
 ## Test and evaluate
 ```bash
 cd backend
-uv run pytest                                  # 41 tests (AWS tests auto-skip if LocalStack is off)
+uv run pytest                                  # 79 tests (AWS tests auto-skip if LocalStack is off)
 uv run python evals/run_evals.py --langsmith   # 12-question golden set → evals/results/latest.md
 uv run python evals/rag_bench.py               # chunking benchmark
 uv run python -m repurpora.ml.opportunity_scorer --train   # retrain + metrics

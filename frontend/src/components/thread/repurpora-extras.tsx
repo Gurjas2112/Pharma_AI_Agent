@@ -21,6 +21,10 @@ export const SAMPLE_PROMPTS = [
     prompt: "Check the patent landscape and freedom-to-operate risk for colchicine in cardiovascular secondary prevention.",
   },
   {
+    title: "My saved reports",
+    prompt: "List my saved reports with their decisions and ML scores",
+  },
+  {
     title: "Your research memory",
     prompt: "What do you remember about my research so far?",
   },

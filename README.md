@@ -88,17 +88,19 @@ AWS emulated through LocalStack).
 
 ## Results (measured by this repo's own evaluation scripts)
 
-### Agent quality on a 12-question golden set: before and after fixes
+### Agent quality on a 13-question golden set: before and after fixes
 
 | Metric | v1 baseline | **v2 (shipped)** | What it means |
 |---|---|---|---|
-| Evidence coverage | 0.29 | **__COV__** | Share of claims with a valid `[E#]` citation |
-| Citation accuracy | 0.82 | **__CACC__** | Share of citations pointing at real evidence |
-| Judge faithfulness (1–5) | 3.0 | **__FAITH__** | LLM-as-judge rating |
-| Agent routing recall | 0.91 | **__REC__** | Did the planner call the agents the question needs? |
-| Molecule extraction accuracy | 1.00 | **__MOL__** | |
-| Guardrail block rate | 1.00 | **__BLOCK__** | Adversarial prompt refused |
-| Latency p50 / p95 | 126 s / 173 s | **__P50__ s / __P95__ s** | Full assessment on one 6 GB laptop GPU |
+| Evidence coverage | 0.29 | **0.76** | Share of claims with a valid `[E#]` citation |
+| Citation accuracy | 0.82 | **1.00** | Share of citations pointing at real evidence |
+| Judge faithfulness (1–5) | 3.0 | **3.0** | LLM-as-judge rating |
+| Agent routing recall | 0.91 | **1.00** | Did the planner call the agents the question needs? |
+| Molecule extraction accuracy | 1.00 | **1.00** | |
+| Guardrail block rate | 1.00 | **1.00** | Adversarial prompt refused |
+| Latency p50 / p95 | 126 s / 173 s | **120 s / 135 s** | Full assessment on one 6 GB laptop GPU |
+| Agent routing precision | 0.64 | **0.38** | Deliberately traded for recall: molecule questions always run market, patent and trial agents |
+| Archive-question routing | n/a | **1.00** | New: questions about saved reports go to the SQL agent |
 
 The v1 evaluation exposed two problems: the model often stated facts without citing them, and one question was
 mis-routed. The fixes were **post-hoc citation attribution** (a citation is added only when an evidence snippet

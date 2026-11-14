@@ -133,3 +133,12 @@ def test_mcp_exposes_read_only_tools_and_calls_them():
                                                            "evidence_strength": 0.7}))
     payload = json.loads(res.content[0].text)
     assert 0 <= payload["probability"] <= 1 and "imputed_fields" in payload
+
+
+def test_mcp_rejects_unlisted_browser_origin(client, monkeypatch):
+    """DNS-rebinding protection: an authenticated request from a non-allow-listed Origin is refused."""
+    monkeypatch.setattr("repurpora.auth.verify", lambda token: {"sub": "u1", "exp": 9999999999})
+    hdr = {"accept": "application/json, text/event-stream", "host": "localhost:8081",
+           "origin": "https://evil.example", "authorization": "Bearer test"}
+    r = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, headers=hdr)
+    assert r.status_code == 403

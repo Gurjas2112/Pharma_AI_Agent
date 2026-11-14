@@ -170,7 +170,10 @@ def asgi_app():
     """Starlette app serving /mcp (+ OAuth protected-resource metadata), host-checked against DNS rebinding."""
     mcp = build()
     hosts = [h.strip() for h in os.getenv("MCP_ALLOWED_HOSTS", "localhost:*,127.0.0.1:*").split(",") if h.strip()]
+    # browser clients (the /developers console) must come from an allow-listed Origin; non-browser clients send none
+    origins = [o.strip() for o in os.getenv("MCP_ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
     app = mcp.streamable_http_app(streamable_http_path="/mcp", stateless_http=True, json_response=True,
                                   transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=True,
-                                                                               allowed_hosts=hosts))
+                                                                               allowed_hosts=hosts,
+                                                                               allowed_origins=origins))
     return mcp, app

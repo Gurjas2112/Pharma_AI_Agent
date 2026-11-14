@@ -27,6 +27,14 @@ deployment**: Vercel frontend → Railway Aegra agent server → Supabase. The L
 | **MCP server** | |
 | `27_mcp_client_session_production.png` + `mcp_session_transcript.md` | Real session against the deployed MCP server with the official `mcp` client: 401 without a token, OAuth protected-resource metadata, initialize, `tools/list` (9 read-only tools), and three `tools/call` results. Re-create with `backend/scripts/mcp_demo.py`. |
 
+| **MCP server: in-app developer console** (`/developers`), recorded by `frontend/e2e/mcp.spec.ts` | |
+| `mcp_server_walkthrough.mp4` | MCP flow (about 22 s) against the production server from the browser |
+| `28` | Console: MCP endpoint, signed-in session (bearer token never displayed), client config snippet |
+| `29` | Call without a token: **HTTP 401** with a `WWW-Authenticate` challenge pointing to the OAuth metadata |
+| `30` | Connect: protected-resource metadata, then `initialize` (protocol 2025-06-18), then `tools/list`: 9 read-only tools with input schemas |
+| `31`–`32` | `tools/call`: `patent_landscape` (USPTO clone) and `opportunity_score` (calibrated ML) with live latencies |
+| `33` | `tools/call` on `my_reports` (user-scoped SQL agent) and the full **JSON-RPC wire log**, tokens redacted |
+
 The admin recording used a dedicated demo admin account whose role was **revoked** right after recording, so no
 standing admin account exists on the public demo. Grant one with `backend/scripts/make_admin.py <email>`.
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileUp, LogOut, LoaderCircle, Home, ShieldCheck } from "lucide-react";
+import { FileUp, LogOut, LoaderCircle, Home, ShieldCheck, Plug } from "lucide-react";
 import { toast } from "sonner";
 import { authHeaders, useAuth } from "@/providers/Auth";
 import { Button } from "../ui/button";
@@ -91,6 +91,10 @@ export function ChatToolbar() {
           <ShieldCheck className="size-4" /> <span className="hidden md:inline">Admin</span>
         </a>
       )}
+      <a href="/developers" title="MCP server / developers" aria-label="MCP server" data-testid="developers-link"
+         className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-teal-700 hover:bg-teal-50">
+        <Plug className="size-4" /> <span className="hidden md:inline">MCP</span>
+      </a>
       <a href="/" title="Home" aria-label="Home" className="p-2 rounded-md hover:bg-gray-100">
         <Home className="size-4" />
       </a>

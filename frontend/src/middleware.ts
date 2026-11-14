@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
-  if (!user && (path.startsWith("/chat") || path.startsWith("/admin"))) {
+  if (!user && (path.startsWith("/chat") || path.startsWith("/admin") || path.startsWith("/developers"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
@@ -38,4 +38,4 @@ export async function middleware(request: NextRequest) {
 }
 
 // /admin is additionally role-checked server-side by the admin API (403 for non-admins)
-export const config = { matcher: ["/chat/:path*", "/admin/:path*", "/login", "/signup"] };
+export const config = { matcher: ["/chat/:path*", "/admin/:path*", "/developers/:path*", "/login", "/signup"] };

@@ -33,6 +33,7 @@ app.add_middleware(
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["WWW-Authenticate", "Mcp-Session-Id"],
 )
 
 

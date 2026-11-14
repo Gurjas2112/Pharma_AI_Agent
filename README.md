@@ -18,7 +18,7 @@ A master agent fans out to market, trade, patent, clinical-trial, internal-RAG a
 <p align="center">
 <img alt="python" src="https://img.shields.io/badge/python-3.12-3776AB"/>
 <img alt="langgraph" src="https://img.shields.io/badge/LangGraph-1.2-1C3C3C"/>
-<img alt="tests" src="https://img.shields.io/badge/tests-79%20passing-2EA44F"/>
+<img alt="tests" src="https://img.shields.io/badge/tests-92%20passing-2EA44F"/>
 <img alt="deploy" src="https://img.shields.io/badge/deployed-Vercel%20%2B%20Railway-black"/>
 <img alt="license" src="https://img.shields.io/badge/license-MIT-blue"/>
 </p>
@@ -166,7 +166,7 @@ context budget.
 | **Read research and apply it** | [`essential_docs/`](essential_docs) papers (DrugRAG, production RAG, AHP product selection) → evidence-gated RAG and selection criteria |
 | **Cloud and containers** | AWS (EC2 GPU IaC, S3, Secrets Manager, CloudWatch via LocalStack), Docker Compose (10 services), Railway, Vercel |
 | **Vector DBs, embeddings, LangChain** | Supabase pgvector (HNSW index), nomic embeddings, LangChain + LangGraph 1.x |
-| **Testing** | 79 pytest tests (unit, ML workflow, SQL-agent attack corpus, graph integration with a fake LLM, AWS emulator) + Playwright end-to-end recording |
+| **Testing** | 92 pytest tests (unit, ML workflow, SQL-agent attack corpus, admin RBAC, MCP, graph integration with a fake LLM, AWS emulator) + Playwright end-to-end recording |
 
 ---
 
@@ -209,6 +209,41 @@ sessions use this week?"*. The master agent routes these to a **text-to-SQL agen
 | Execution limits | Read-only transaction, 5 s timeout |
 | Fallback and transparency | Safe template queries if the LLM fails; the SQL that ran is shown to you |
 | Testing | A 15-case attack corpus in [`tests/test_sql_agent.py`](backend/tests/test_sql_agent.py) |
+</details>
+
+<details><summary><b>🔌 MCP server: use Repurpora's tools from Claude Desktop, Cursor or other agents</b></summary>
+
+Internally the agents call their tools in-process, with no extra network hop. Externally the same tools are published
+as a **Model Context Protocol** server, so any MCP client can use them:
+
+`molecule_profile` · `market_insights` · `trade_flows` · `patent_landscape` · `clinical_trials` · `web_intelligence` ·
+`internal_knowledge` · `opportunity_score` · `my_reports`
+
+| Property | How |
+|---|---|
+| Transport | Streamable HTTP at `https://<aux-service>/mcp` |
+| Auth | OAuth 2.1 resource server: bearer token = Supabase access token (verified via JWKS). OAuth protected-resource metadata published at `/.well-known/oauth-protected-resource/mcp`, pointing to Supabase Auth as the issuer |
+| Safety | Every tool is annotated read-only. Per-user scoping applies to internal documents and archived reports. DNS-rebinding host checks. Every call is audited (`mcp_tool_call`). |
+
+Code: [`mcp_server.py`](backend/src/repurpora/mcp_server.py).
+</details>
+
+<details><summary><b>🛠 Admin panel (/admin)</b></summary>
+
+A back-office for operators. Every action requires the `admin` role (stored in Supabase `app_metadata`, so users
+can't grant it to themselves), is enforced by the API, not just hidden in the UI, and is written to the audit log.
+
+| Tab | What you can do |
+|---|---|
+| Overview | Reports, active users, LLM calls, tokens, estimated cost per report, guardrail blocks. Charts of tokens per day, latency (average and p95), decisions, and evidence-coverage trend. Usage broken down by model and by graph node. |
+| Models & safety | Change models and temperature, the evidence-coverage gate, max redrafts, the human-approval gate, and which agents are enabled. A **kill switch** pauses everything. Changes apply within about 15 s with no redeploy, are validated, require a reason, and are versioned with full change history. |
+| Agents & knowledge | Each agent's tool allow-list; indexed documents and chunk counts; delete a document |
+| Users & roles | Make admin or revoke, suspend or reactivate (admins can't lock themselves out), reports per user, last sign-in |
+| Audit log | Filterable append-only events: guardrails, plans, tool calls, judge, SQL agent, MCP, memory, admin actions |
+
+Raw table editing is deliberately left to **Supabase Studio** and traces to **LangSmith**; the panel links to both
+rather than re-implementing a database editor. Code: [`admin/api.py`](backend/src/repurpora/admin/api.py),
+[`admin-app.tsx`](frontend/src/components/admin/admin-app.tsx), [`runtime_config.py`](backend/src/repurpora/runtime_config.py).
 </details>
 
 <details><summary><b>🧠 Memory you can see and erase</b></summary>
@@ -256,7 +291,8 @@ sessions use this week?"*. The master agent routes these to a **text-to-SQL agen
 Browser ──► Vercel (Next.js: landing, login, Agent Chat UI)
               │ Supabase JWT
               ▼
-           Railway: agent-server (Aegra + LangGraph) ──► Railway: mock-apis (IQVIA/EXIM/USPTO/web mocks, PDF upload)
+           Railway: agent-server (Aegra + LangGraph) ──► Railway: aux service (data-source mocks, PDF upload,
+                                                                  admin API, MCP server at /mcp)
               │            │            │
               │            │            └─► live: ClinicalTrials.gov v2 · Firecrawl · LangSmith
               │            └─► Redis (LLM + tool cache)
@@ -306,7 +342,7 @@ cd backend && uv run python scripts/make_synthetic_internal_docs.py && uv run py
 ## Test and evaluate
 ```bash
 cd backend
-uv run pytest                                  # 79 tests (AWS tests auto-skip if LocalStack is off)
+uv run pytest                                  # 92 tests (AWS tests auto-skip if LocalStack is off)
 uv run python evals/run_evals.py --langsmith   # 12-question golden set → evals/results/latest.md
 uv run python evals/rag_bench.py               # chunking benchmark
 uv run python -m repurpora.ml.opportunity_scorer --train   # retrain + metrics

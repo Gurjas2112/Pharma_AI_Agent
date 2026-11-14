@@ -86,6 +86,29 @@ routed (regex fast-path, or the LLM planner's `archive_query` intent) to `sql_ag
 | Test | single held-out evaluation with a bootstrap CI |
 | Regression guard | the shipped model must reproduce `expected_test_predictions.csv` |
 
+## MCP server (external tool contract)
+
+The worker agents call tools **in-process**; MCP is only the outward-facing contract, so internal calls pay no protocol
+hop. `repurpora/mcp_server.py` publishes 9 read-only tools over Streamable HTTP (`/mcp` on the aux service). The
+server is an OAuth 2.1 **resource server**: Supabase is the authorization server, bearer tokens are verified via JWKS,
+the scope is `repurpora:read`, and RFC 9728 protected-resource metadata is served. User-scoped tools
+(`internal_knowledge`, `my_reports`) use the token's `sub`. Every call is audited. Host-header checks guard against DNS rebinding.
+
+## Admin panel and runtime config
+
+```
+/admin (Next.js) ──Bearer JWT──► aux service /admin/* ──require_admin (app_metadata.role == "admin")
+                                     │  overview: llm_usage, reports, audit_log aggregates
+                                     │  config: app_config (+ app_config_history) ──► runtime_config.get() (15 s TTL)
+                                     │                                               ──► graph: models, temperature, coverage gate,
+                                     │                                                   redrafts, HITL gate, disabled agents, kill switch
+                                     │  agents and RAG: allow-lists, rag_documents (delete)
+                                     │  users: Supabase admin API (role in app_metadata, ban_duration)
+                                     └  audit: audit_log (filter by event)
+```
+Config changes are validated by a Pydantic contract, require a reason, are versioned, and every admin mutation is audited.
+Admins can't demote or suspend themselves.
+
 ## Universal coverage
 
 | Dimension | Behaviour |

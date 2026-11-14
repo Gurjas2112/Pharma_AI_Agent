@@ -65,8 +65,15 @@ def _last_user_text(state: ResearchState) -> str:
 # ------------------------------------------------------------- guard_input --
 
 def guard_input(state: ResearchState, config: RunnableConfig) -> Command[Literal["memory_load", "__end__"]]:
+    from repurpora import runtime_config
+
     thread, owner = _cfg(config)
     text = _last_user_text(state)
+    rc = runtime_config.get()
+    if rc.kill_switch:  # admin kill switch (reference image 5: governance control)
+        audit("kill_switch_refusal", {}, thread, owner)
+        return Command(goto="__end__", update={"guard": {"allowed": False, "reasons": ["kill switch"]},
+                                               "messages": [AIMessage(f"⏸️ {rc.maintenance_message}")]})
     g = scan_input(text, get_settings().max_input_chars)
     audit("guard_input", {"allowed": g.allowed, "risk": g.risk, "reasons": g.reasons}, thread, owner, prompt=text)
     if not g.allowed:
@@ -165,7 +172,7 @@ def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["wo
                                                                               "__end__"]]:
     thread, owner = _cfg(config)
     text = _last_user_text(state)
-    from repurpora import memory, regions
+    from repurpora import memory, regions, runtime_config
 
     mem_state = state.get("memory") or {}
     prior = state.get("plan") or {}
@@ -220,6 +227,9 @@ def planner(state: ResearchState, config: RunnableConfig) -> Command[Literal["wo
                 plan.workers.append(core_w)
     if plan.intent == "research" and not plan.molecule:
         plan.workers = [w for w in plan.workers if w not in ("exim", "patent", "clinical_trials")] or ["iqvia", "web"]
+    disabled = set(runtime_config.get().disabled_agents)  # admin can switch agents off at runtime
+    if disabled:
+        plan.workers = [w for w in plan.workers if w not in disabled] or             [w for w in ("web", "iqvia", "internal") if w not in disabled][:1]
     audit("plan", plan.model_dump(), thread, owner)
     pd_ = {**plan.model_dump(), "region_explicit": region_explicit}
 
@@ -467,9 +477,11 @@ def judge(state: ResearchState, config: RunnableConfig) -> Command[Literal["synt
     verdict = {"evidence_coverage": round(cov, 3), "citation_accuracy": round(cacc, 3), "auto_attributed": n_attr,
                "faithfulness": faith, "uncited": (uncited + unsupported)[:8]}
     audit("judge", verdict, thread, owner)
-    s = get_settings()
-    needs_redraft = (cov < s.evidence_coverage_threshold or (faith is not None and faith <= 2))
-    if needs_redraft and state.get("redrafts", 0) < s.max_redrafts:
+    from repurpora import runtime_config
+
+    rc = runtime_config.get()
+    needs_redraft = (cov < rc.evidence_coverage_threshold or (faith is not None and faith <= 2))
+    if needs_redraft and state.get("redrafts", 0) < rc.max_redrafts:
         return Command(goto="synthesizer", update={"judge": verdict, "draft": draft,
                                                    "step_log": [f"judge: redraft cov={cov:.2f}"]})
     return Command(goto="report", update={"judge": verdict, "draft": draft, "step_log": [f"judge: accept cov={cov:.2f}"]})
@@ -485,7 +497,9 @@ def report(state: ResearchState, config: RunnableConfig) -> dict:
     plan, sc = state.get("plan") or {}, state.get("scores") or {}
     if not plan.get("want_report", True):
         return {"report": {}}
-    if get_settings().require_human_approval and sc.get("decision") == "GO":
+    from repurpora import runtime_config
+
+    if runtime_config.get().require_human_approval and sc.get("decision") == "GO":
         decision = interrupt({"type": "approve_archive", "decision": sc.get("decision"),
                               "question": "Approve archiving this GO recommendation? (yes/no)"})
         if str(decision).strip().lower() not in ("yes", "y", "approve", "true"):

@@ -13,3 +13,5 @@
 | 2026-11-14 | Universal coverage: any molecule (live CT.gov enrichment), 11 canonical regions, OpenAI-compatible provider option, non-English queries | Prototype only covered 8 curated molecules and India/US | backend/tests/test_units.py |
 | 2026-11-14 | ML scorer v2: dataset card, EDA, leakage drop, feature engineering, out-of-time split, baselines, CV search, one-SE rule, calibration, cost-based threshold, expected-output regression test | v1 was a single script with no EDA, baselines or persisted splits | backend/src/repurpora/ml/reports/model_report.md |
 | 2026-11-14 | Archive SQL agent + `archive_reader` role with RLS | Archived reports could not be queried from chat; a validator-only design had a comma-join bypass found in review | backend/tests/test_sql_agent.py |
+| 2026-11-14 | Admin panel + runtime config (kill switch, model/gate/agent toggles) | Settings required redeploys; no operator view of usage, cost or quality | backend/tests/test_admin_mcp.py |
+| 2026-11-14 | Outbound MCP server (OAuth 2.1 resource server via Supabase) | Let external MCP clients reuse the research tools; internal calls stay in-process | backend/tests/test_admin_mcp.py |

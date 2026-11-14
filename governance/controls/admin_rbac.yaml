@@ -1,0 +1,13 @@
+# Admin back-office controls (backend/src/repurpora/admin/api.py)
+roles:
+  analyst: default for every user - research chat, own reports, own memory
+  admin: app_metadata.role == "admin" (only the service role can write app_metadata)
+grant_admin: scripts/make_admin.py <email>  (requires the Supabase service key; audited at next admin action)
+enforcement: server-side dependency require_admin on every /admin route (UI hiding is cosmetic only)
+self_protection: admins cannot remove their own admin role or suspend themselves
+runtime_config:
+  storage: app_config (versioned) + app_config_history (old -> new, actor, reason, timestamp)
+  validation: pydantic RuntimeConfig contract; unknown keys rejected; at least one agent must stay enabled
+  propagation: graph reads with 15 s TTL - no redeploy
+  kill_switch: guard_input refuses all requests with the maintenance message; audited as kill_switch_refusal
+audit_events: [admin_config_update, admin_role_change, admin_suspend, admin_unsuspend, admin_rag_delete]

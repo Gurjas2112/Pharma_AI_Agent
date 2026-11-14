@@ -52,12 +52,20 @@ def _init_cache() -> None:
 _init_cache()
 
 
-@lru_cache(maxsize=8)
 def get_llm(role: Role = "primary", temperature: float | None = None, json_mode: bool = False):
-    """Chat model for a role. Provider-agnostic: Ollama (default) or any OpenAI-compatible API."""
+    """Chat model for a role. Model names and temperature come from the admin-managed runtime config."""
+    from repurpora import runtime_config
+
+    cfg = runtime_config.get()
+    model = cfg.llm_model_primary if role == "primary" else cfg.llm_model_fast
+    temp = cfg.llm_temperature if temperature is None else temperature
+    return _build_llm(role, model, round(float(temp), 3), json_mode)
+
+
+@lru_cache(maxsize=16)
+def _build_llm(role: Role, model: str, temp: float, json_mode: bool):
+    """Provider-agnostic: Ollama (default) or any OpenAI-compatible API."""
     s = get_settings()
-    model = s.llm_model_primary if role == "primary" else s.llm_model_fast
-    temp = s.llm_temperature if temperature is None else temperature
     # hard output caps stop runaway generations (e.g. a small model looping inside a JSON string)
     max_out = 400 if json_mode else (1400 if role == "primary" else 512)
     if s.llm_provider.lower() in ("openai", "openai_compatible", "vllm"):

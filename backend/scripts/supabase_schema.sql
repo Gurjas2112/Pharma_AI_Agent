@@ -177,3 +177,26 @@ create policy archive_reader_own_reports on reports for select to archive_reader
 drop policy if exists archive_reader_own_usage on llm_usage;
 create policy archive_reader_own_usage on llm_usage for select to archive_reader
   using (owner is not distinct from nullif(current_setting('repurpora.owner', true), ''));
+
+-- ------------------------------------------------- Admin: runtime config (v3) ----
+-- Versioned runtime settings editable from the admin panel (no redeploy). Every change is
+-- appended to app_config_history (who, when, old -> new) for the governance change log.
+create table if not exists app_config (
+  key         text primary key,
+  value       jsonb not null,
+  version     int not null default 1,
+  updated_by  text,
+  updated_at  timestamptz default now()
+);
+create table if not exists app_config_history (
+  id          bigserial primary key,
+  key         text not null,
+  old_value   jsonb,
+  new_value   jsonb,
+  version     int,
+  changed_by  text,
+  reason      text,
+  changed_at  timestamptz default now()
+);
+alter table app_config enable row level security;
+alter table app_config_history enable row level security;

@@ -54,6 +54,8 @@ The 5-slide journey in the PS maps as follows:
 | F10 | Report generator: PDF/Excel, download link in chat | `report`: ReportLab + matplotlib charts, openpyxl workbook, signed URLs |
 | F11 | Archive reports | Supabase Storage `reports/{user}/{id}`, `reports` table, S3 mirror |
 | F13 | Query the report archive from chat | `sql_agent`: user-scoped, read-only text-to-SQL with validator, `archive_reader` role and RLS, template fallback |
+| F14 | Expose tools to external agents | MCP server (Streamable HTTP, OAuth 2.1 resource server via Supabase, 9 read-only tools, audited) |
+| F15 | Admin back-office | `/admin`: usage, cost and quality analytics; runtime model and safety config with kill switch; agent and RAG governance; RBAC users; audit log |
 | F12 | At least 10 strategic queries | `evals/golden_queries.jsonl` (11 strategic + 1 adversarial) |
 
 ## 5. Non-functional requirements

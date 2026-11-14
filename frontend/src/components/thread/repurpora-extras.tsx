@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FileUp, LogOut, LoaderCircle, Home } from "lucide-react";
+import { FileUp, LogOut, LoaderCircle, Home, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { authHeaders, useAuth } from "@/providers/Auth";
 import { Button } from "../ui/button";
@@ -85,6 +85,12 @@ export function ChatToolbar() {
         {uploading ? <LoaderCircle className="size-4 animate-spin" /> : <FileUp className="size-4" />}
         <span className="hidden md:inline">Upload PDF</span>
       </Button>
+      {session?.user?.app_metadata?.role === "admin" && (
+        <a href="/admin" title="Admin panel" aria-label="Admin panel" data-testid="admin-link"
+           className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-violet-700 hover:bg-violet-50">
+          <ShieldCheck className="size-4" /> <span className="hidden md:inline">Admin</span>
+        </a>
+      )}
       <a href="/" title="Home" aria-label="Home" className="p-2 rounded-md hover:bg-gray-100">
         <Home className="size-4" />
       </a>

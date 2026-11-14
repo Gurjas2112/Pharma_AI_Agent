@@ -6,14 +6,28 @@ report-download proxy and the internal-document upload endpoint used by the UI.
 
 from __future__ import annotations
 
+import contextlib  # noqa: E402
 import os
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from repurpora.admin.api import router as admin_router  # noqa: E402
+from repurpora.mcp_server import asgi_app as mcp_asgi_app  # noqa: E402
 from repurpora.mock_apis import data
 
-app = FastAPI(title="Repurpora mock data sources", version="1.0.0")
+_mcp, _mcp_app = mcp_asgi_app()
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app):
+    async with _mcp.session_manager.run():  # MCP streamable-HTTP session manager
+        yield
+
+
+app = FastAPI(title="Repurpora aux service: mock data sources, uploads, admin API, MCP server",
+              version="1.1.0", lifespan=lifespan)
+app.include_router(admin_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
@@ -89,3 +103,7 @@ async def upload(file: UploadFile = File(...), authorization: str | None = Heade
         raise HTTPException(413, "file too large (15MB max)")
     n = ingest_pdf_bytes(raw, file.filename or "upload.pdf", owner=user)
     return {"status": "ingested", "file": file.filename, "chunks": n}
+
+
+# MCP (Streamable HTTP at /mcp + /.well-known/oauth-protected-resource). Mounted last so FastAPI routes win.
+app.mount("/", _mcp_app)

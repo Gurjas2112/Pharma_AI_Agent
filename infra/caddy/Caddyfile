@@ -1,0 +1,27 @@
+# Bearer-token reverse proxy in front of Ollama.
+# Same config runs locally (docker compose) and on the AWS EC2 GPU host.
+{
+	admin off
+}
+{$OLLAMA_PROXY_SITE::8443} {
+	@authorized header Authorization "Bearer {$OLLAMA_PROXY_TOKEN}"
+	handle @authorized {
+		reverse_proxy {$OLLAMA_UPSTREAM:ollama:11434} {
+			header_up Host {upstream_hostport}
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+			}
+		}
+	}
+	handle /healthz {
+		respond "ok" 200
+	}
+	handle {
+		respond "unauthorized" 401
+	}
+	log {
+		output stdout
+		format json
+	}
+}

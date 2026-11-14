@@ -1,0 +1,41 @@
+# secrets
+.env
+.env.*
+!.env.example
+**/.env
+!**/.env.example
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+# node
+node_modules/
+.next/
+.vercel/
+# artifacts / large binaries
+models/
+*.gguf
+backend/data/internal_docs/
+backend/data/uploads/
+backend/reports_out/
+backend/src/repurpora/ml/artifacts/*.joblib
+localstack_data/
+playwright-report/
+test-results/
+# os
+.DS_Store
+Thumbs.db
+# claude
+.claude/
+# local run artefacts
+/.*.log
+/.tunnel_url
+/.railway_*
+docs/deck/node_modules/
+docs/deck/package-lock.json
+frontend/test-results/
+backend/data/index/
+backend/.env.legacy

@@ -1,120 +1,157 @@
--- PharmaAI Supabase Database Schema
--- Run this SQL in your Supabase SQL Editor to create the necessary tables
+-- Repurpora / Lazarus Graph - Supabase schema (idempotent)
+-- Apply:  uv run python scripts/apply_schema.py
+create extension if not exists vector;
+create extension if not exists pgcrypto;
 
--- Enable vector extension for pgvector
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Create internal_docs table for storing document chunks with embeddings
-CREATE TABLE IF NOT EXISTS internal_docs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source TEXT NOT NULL,
-    content TEXT NOT NULL,
-    embedding vector(1536),  -- Standard embedding dimension (compatible with Mistral)
-    metadata JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ---------------------------------------------------------------- RAG ----
+create table if not exists rag_documents (
+  id          bigserial primary key,
+  sha256      text unique not null,
+  source      text not null,
+  owner       text,                      -- null = shared corpus; else auth.uid()
+  n_chunks    int default 0,
+  version     int default 1,
+  created_at  timestamptz default now()
 );
 
--- Create index for vector similarity search
-CREATE INDEX IF NOT EXISTS internal_docs_embedding_idx 
-ON internal_docs 
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
-
--- Create reports table for storing generated research reports
-CREATE TABLE IF NOT EXISTS reports (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    report_id TEXT UNIQUE NOT NULL,
-    molecule TEXT NOT NULL,
-    disease TEXT,
-    decision TEXT NOT NULL,
-    confidence INTEGER,
-    findings JSONB,
-    file_path TEXT NOT NULL,
-    pdf_binary BYTEA,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+create table if not exists rag_chunks (
+  id             bigserial primary key,
+  document_id    bigint references rag_documents(id) on delete cascade,
+  owner          text,
+  source         text not null,
+  page           int,
+  chunk_index    int,
+  strategy       text default 'recursive',
+  content        text not null,
+  parent_content text,
+  embedding      vector(768) not null,   -- nomic-embed-text
+  fts            tsvector generated always as (to_tsvector('english', content)) stored,
+  created_at     timestamptz default now()
 );
+create index if not exists rag_chunks_embedding_hnsw on rag_chunks
+  using hnsw (embedding vector_cosine_ops) with (m = 16, ef_construction = 64);
+create index if not exists rag_chunks_fts on rag_chunks using gin (fts);
+create index if not exists rag_chunks_owner on rag_chunks (owner);
 
--- Create RPC function for similarity search
-CREATE OR REPLACE FUNCTION match_internal_docs(
-    query_embedding vector(1536),
-    match_threshold float DEFAULT 0.7,
-    match_count int DEFAULT 5
-)
-RETURNS TABLE (
-    id UUID,
-    source TEXT,
-    content TEXT,
-    similarity float,
-    metadata JSONB
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        internal_docs.id,
-        internal_docs.source,
-        internal_docs.content,
-        1 - (internal_docs.embedding <=> query_embedding) AS similarity,
-        internal_docs.metadata
-    FROM internal_docs
-    WHERE 1 - (internal_docs.embedding <=> query_embedding) > match_threshold
-    ORDER BY internal_docs.embedding <=> query_embedding
-    LIMIT match_count;
-END;
+-- Hybrid search: dense + sparse fused with Reciprocal Rank Fusion (k = 60)
+create or replace function hybrid_search(
+  query_embedding vector(768),
+  query_text      text,
+  match_count     int default 15,
+  p_owner         text default null,
+  rrf_k           int default 60
+) returns table (id bigint, source text, page int, content text, parent_content text,
+                 dense_sim float, rrf_score float)
+language sql stable as $$
+  with dense as (
+    select c.id, 1 - (c.embedding <=> query_embedding) as sim,
+           row_number() over (order by c.embedding <=> query_embedding) as rnk
+    from rag_chunks c
+    where c.owner is null or c.owner = p_owner
+    order by c.embedding <=> query_embedding
+    limit match_count * 2
+  ),
+  sparse as (
+    select c.id,
+           row_number() over (order by ts_rank_cd(c.fts, websearch_to_tsquery('english', query_text)) desc) as rnk
+    from rag_chunks c
+    where (c.owner is null or c.owner = p_owner)
+      and c.fts @@ websearch_to_tsquery('english', query_text)
+    limit match_count * 2
+  ),
+  fused as (
+    select coalesce(d.id, s.id) as id,
+           coalesce(1.0 / (rrf_k + d.rnk), 0) + coalesce(1.0 / (rrf_k + s.rnk), 0) as score,
+           d.sim
+    from dense d full outer join sparse s on d.id = s.id
+  )
+  select c.id, c.source, c.page, c.content, c.parent_content,
+         coalesce(f.sim, 1 - (c.embedding <=> query_embedding)) as dense_sim, f.score as rrf_score
+  from fused f join rag_chunks c on c.id = f.id
+  order by f.score desc
+  limit match_count;
 $$;
 
--- Grant necessary permissions (adjust for your security needs)
-ALTER TABLE internal_docs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
+-- ------------------------------------------------------------ Reports ----
+create table if not exists reports (
+  id            uuid primary key default gen_random_uuid(),
+  report_id     text unique not null,
+  owner         text,
+  thread_id     text,
+  query         text,
+  molecule      text,
+  indication    text,
+  decision      text,
+  confidence    int,
+  ml_score      float,
+  evidence_coverage float,
+  storage_path  text,
+  excel_path    text,
+  s3_key        text,
+  findings      jsonb,
+  created_at    timestamptz default now()
+);
+create index if not exists reports_owner on reports(owner, created_at desc);
 
--- Example policies (customize based on your auth requirements)
--- For now, allow authenticated users to read/write
-DROP POLICY IF EXISTS "Allow authenticated users to read internal_docs" ON internal_docs;
-CREATE POLICY "Allow authenticated users to read internal_docs"
-    ON internal_docs FOR SELECT
-    TO authenticated
-    USING (true);
+-- ------------------------------------------------------ Observability ----
+create table if not exists llm_usage (
+  id            bigserial primary key,
+  run_id        text,
+  thread_id     text,
+  owner         text,
+  model         text,
+  node          text,
+  input_tokens  int,
+  output_tokens int,
+  latency_ms    int,
+  cached        boolean default false,
+  created_at    timestamptz default now()
+);
 
-DROP POLICY IF EXISTS "Allow authenticated users to insert internal_docs" ON internal_docs;
-CREATE POLICY "Allow authenticated users to insert internal_docs"
-    ON internal_docs FOR INSERT
-    TO authenticated
-    WITH CHECK (true);
+-- append-only audit trail (no update/delete grants)
+create table if not exists audit_log (
+  id          bigserial primary key,
+  ts          timestamptz default now(),
+  thread_id   text,
+  owner       text,
+  event       text not null,           -- guard_input | plan | tool_call | policy | judge | archive
+  detail      jsonb,
+  prompt_sha  text
+);
 
-DROP POLICY IF EXISTS "Allow authenticated users to read reports" ON reports;
-CREATE POLICY "Allow authenticated users to read reports"
-    ON reports FOR SELECT
-    TO authenticated
-    USING (true);
+create table if not exists feedback (
+  id          bigserial primary key,
+  owner       text,
+  thread_id   text,
+  run_id      text,
+  score       int check (score in (-1, 1)),
+  comment     text,
+  created_at  timestamptz default now()
+);
 
-DROP POLICY IF EXISTS "Allow authenticated users to insert reports" ON reports;
-CREATE POLICY "Allow authenticated users to insert reports"
-    ON reports FOR INSERT
-    TO authenticated
-    WITH CHECK (true);
+-- -------------------------------------------------------------- RLS ------
+-- Backend uses the service role (bypasses RLS). Browser clients may only read
+-- their own reports and write their own feedback. No anon writes.
+alter table rag_documents enable row level security;
+alter table rag_chunks    enable row level security;
+alter table reports       enable row level security;
+alter table llm_usage     enable row level security;
+alter table audit_log     enable row level security;
+alter table feedback      enable row level security;
 
--- For anon key access (development only - remove in production)
-DROP POLICY IF EXISTS "Allow anon to read internal_docs" ON internal_docs;
-CREATE POLICY "Allow anon to read internal_docs"
-    ON internal_docs FOR SELECT
-    TO anon
-    USING (true);
+drop policy if exists reports_owner_read on reports;
+create policy reports_owner_read on reports for select to authenticated
+  using (owner = auth.uid()::text);
 
-DROP POLICY IF EXISTS "Allow anon to insert internal_docs" ON internal_docs;
-CREATE POLICY "Allow anon to insert internal_docs"
-    ON internal_docs FOR INSERT
-    TO anon
-    WITH CHECK (true);
+drop policy if exists feedback_owner_insert on feedback;
+create policy feedback_owner_insert on feedback for insert to authenticated
+  with check (owner = auth.uid()::text);
 
-DROP POLICY IF EXISTS "Allow anon to read reports" ON reports;
-CREATE POLICY "Allow anon to read reports"
-    ON reports FOR SELECT
-    TO anon
-    USING (true);
+drop policy if exists feedback_owner_read on feedback;
+create policy feedback_owner_read on feedback for select to authenticated
+  using (owner = auth.uid()::text);
 
-DROP POLICY IF EXISTS "Allow anon to insert reports" ON reports;
-CREATE POLICY "Allow anon to insert reports"
-    ON reports FOR INSERT
-    TO anon
-    WITH CHECK (true);
+-- ------------------------------------------------------------ Storage ----
+insert into storage.buckets (id, name, public)
+values ('reports', 'reports', false)
+on conflict (id) do nothing;

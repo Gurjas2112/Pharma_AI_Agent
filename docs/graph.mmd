@@ -1,0 +1,42 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	compact(compact)
+	guard_input(guard_input)
+	memory_load(memory_load)
+	planner(planner)
+	worker(worker)
+	evidence_merge(evidence_merge)
+	scorer(scorer)
+	synthesizer(synthesizer)
+	judge(judge)
+	report(report)
+	finalize(finalize)
+	memory_write(memory_write)
+	follow_up(follow_up)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> compact;
+	compact --> guard_input;
+	evidence_merge --> scorer;
+	finalize --> memory_write;
+	guard_input -.-> __end__;
+	guard_input -.-> memory_load;
+	judge -.-> report;
+	judge -.-> synthesizer;
+	memory_load --> planner;
+	planner -.-> __end__;
+	planner -.-> follow_up;
+	planner -.-> worker;
+	report --> finalize;
+	scorer --> synthesizer;
+	synthesizer --> judge;
+	worker --> evidence_merge;
+	follow_up --> __end__;
+	memory_write --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

@@ -1,0 +1,17 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "repurpora": {
+      "path": "./src/repurpora/graph.py:graph",
+      "description": "Lazarus Graph master agent: drug-repurposing research orchestration"
+    }
+  },
+  "auth": { "path": "./src/repurpora/auth.py:auth" },
+  "http": {
+    "cors": {
+      "allow_origins": ["http://localhost:3000", "https://repurpora.vercel.app"],
+      "allow_origin_regex": "https://[a-z0-9-]+[.]vercel[.]app",
+      "allow_credentials": true
+    }
+  }
+}

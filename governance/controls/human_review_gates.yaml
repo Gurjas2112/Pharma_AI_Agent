@@ -1,0 +1,7 @@
+gates:
+  - name: approve_archive_go_decision
+    trigger: scores.decision == GO and REQUIRE_HUMAN_APPROVAL=true
+    mechanism: langgraph interrupt() in the report node; resume with Command(resume="yes"|"no")
+  - name: stage_gate_1
+    trigger: any report used for a portfolio stage-gate
+    mechanism: offline expert review of the evidence register (PDF appendix)

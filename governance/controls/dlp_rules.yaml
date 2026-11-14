@@ -1,0 +1,4 @@
+# Mirrors SECRET_PATTERNS / PII_PATTERNS in backend/src/repurpora/guardrails/checks.py
+secrets: [api_key (sk/fc/rlwy/sb_secret/sb_publishable/lsv2 prefixes), aws_access_key, jwt (except signed-URL tokens), postgres_url]
+pii: [email, phone_10_digit, aadhaar, us_ssn]
+action: redact_and_audit     # event "dlp_redaction" -> audit_log + CloudWatch

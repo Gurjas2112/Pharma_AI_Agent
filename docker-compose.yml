@@ -1,0 +1,129 @@
+# Repurpora / Lazarus Graph - full local prototype stack
+#   docker compose up -d --wait                  # core stack
+#   docker compose --profile demo up -d tunnel   # expose Ollama proxy to Railway
+#   docker compose --profile offline up -d postgres   # offline Postgres instead of Supabase
+name: repurpora
+
+x-backend-env: &backend-env
+  env_file: [backend/.env]
+  environment:
+    MOCK_API_URL: http://mock-apis:8081
+    OLLAMA_BASE_URL: http://ollama-proxy:8443
+    REDIS_URL: redis://redis:6379/0
+    AWS_ENDPOINT_URL: http://localstack:4566
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    AWS_DEFAULT_REGION: ap-south-1
+
+services:
+  agent-server:
+    build: { context: backend, dockerfile: Dockerfile }
+    <<: *backend-env
+    ports: ["2026:2026"]
+    depends_on:
+      mock-apis: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      ollama-proxy: { condition: service_started }
+      aws-bootstrap: { condition: service_completed_successfully }
+    restart: unless-stopped
+
+  mock-apis:
+    build: { context: backend, dockerfile: Dockerfile.mockapi }
+    <<: *backend-env
+    ports: ["8081:8081"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "60", "1", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes: [redis_data:/data]
+    ports: ["6380:6379"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, retries: 5 }
+
+  ollama:          # containerised Ollama (use on a GPU host without native Ollama)
+    profiles: [ollama-container]
+    image: ollama/ollama:0.12.6
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_NUM_PARALLEL: "4"
+      OLLAMA_FLASH_ATTENTION: "1"
+    volumes: [ollama_models:/root/.ollama]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    healthcheck: { test: ["CMD", "ollama", "list"], interval: 15s, retries: 10 }
+    restart: unless-stopped
+
+  ollama-init:
+    profiles: [ollama-container]
+    image: ollama/ollama:0.12.6
+    depends_on: { ollama: { condition: service_healthy } }
+    environment: { OLLAMA_HOST: http://ollama:11434 }
+    entrypoint: ["sh", "-c", "for m in qwen2.5:7b-instruct qwen2.5:3b-instruct nomic-embed-text; do ollama pull $$m; done"]
+    volumes: [ollama_models:/root/.ollama]
+
+  ollama-proxy:   # stand-in for the EC2 host's Caddy (bearer-token gate)
+    image: caddy:2.10-alpine
+    env_file: [backend/.env]
+    environment:
+      # default: native host Ollama (RTX 3060); set OLLAMA_UPSTREAM=ollama:11434 with the container profile
+      OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
+      OLLAMA_PROXY_SITE: ":8443"
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: [./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro]
+    ports: ["8443:8443"]
+
+  localstack:     # AWS emulator: S3, Secrets Manager, CloudWatch Logs, EC2
+    image: localstack/localstack:4.9
+    environment:
+      SERVICES: s3,secretsmanager,logs,ec2,iam,sts,ssm
+      PERSISTENCE: "1"
+    volumes: [localstack_data:/var/lib/localstack]
+    ports: ["4566:4566"]
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      retries: 10
+
+  aws-bootstrap:
+    image: amazon/aws-cli:2.27.50
+    env_file: [backend/.env]
+    environment:
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-south-1
+    entrypoint: ["sh", "/scripts/bootstrap_localstack.sh"]
+    volumes: [./infra/aws:/scripts:ro]
+    depends_on: { localstack: { condition: service_healthy } }
+
+  frontend:
+    build:
+      context: frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:2026
+        NEXT_PUBLIC_ASSISTANT_ID: repurpora
+        NEXT_PUBLIC_MOCK_API_URL: http://localhost:8081
+    env_file: [frontend/.env.local]
+    ports: ["3000:3000"]
+    depends_on: [agent-server]
+
+  tunnel:
+    profiles: [demo]
+    image: cloudflare/cloudflared:2025.10.0
+    command: tunnel --no-autoupdate --url http://ollama-proxy:8443
+    depends_on: [ollama-proxy]
+
+  postgres:
+    profiles: [offline]
+    image: pgvector/pgvector:pg16
+    environment: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: repurpora }
+    volumes: [pg_data:/var/lib/postgresql/data, ./backend/scripts/supabase_schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro]
+    ports: ["5432:5432"]
+
+volumes:
+  ollama_models:
+  localstack_data:
+  redis_data:
+  pg_data:

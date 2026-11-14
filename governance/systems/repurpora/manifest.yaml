@@ -1,0 +1,24 @@
+system_id: repurpora-lazarus-graph
+name: Repurpora - Lazarus Graph
+purpose: >
+  Decision-support copilot that accelerates early-stage drug-repurposing research (new indications,
+  dosage forms, patient populations) for a generic-pharma portfolio team.
+owner: Gurjas2112
+risk_tier: medium            # internal R&D decision support; no patient-facing or autonomous actions
+human_oversight: required    # outputs are recommendations; GO archival can require approval (REQUIRE_HUMAN_APPROVAL)
+users: internal portfolio planners (authenticated via Supabase Auth)
+models:
+  - id: qwen2.5:7b-instruct     # planner, synthesizer (Ollama, self-hosted: AWS EC2 / local GPU)
+  - id: qwen2.5:3b-instruct     # worker notes, judge, compaction
+  - id: nomic-embed-text        # embeddings (768-d)
+  - id: opportunity_scorer      # scikit-learn logistic regression (synthetic training data)
+data_sources:
+  - {name: IQVIA mock API, type: synthetic, trust: licensed_db}
+  - {name: EXIM mock server, type: synthetic, trust: licensed_db}
+  - {name: USPTO clone, type: synthetic, trust: registry}
+  - {name: ClinicalTrials.gov v2, type: live public registry, trust: registry}
+  - {name: Firecrawl web search, type: live web, trust: web (untrusted, sanitised)}
+  - {name: Internal docs (Supabase pgvector), type: internal + synthetic, trust: internal}
+data_residency: Supabase ap-southeast-2; LLM inference self-hosted (no third-party LLM APIs)
+pii: none expected; DLP redaction on all outputs
+evaluation: evals/run_evals.py (golden set), evals/rag_bench.py, backend/tests (pytest), ML hold-out metrics

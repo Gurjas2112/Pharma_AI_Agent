@@ -1,0 +1,10 @@
+input:
+  prompt_injection_patterns: 10      # guardrails/checks.py INJECTION_PATTERNS
+  harmful_use_patterns: 4
+  domain_scope: pharmaceutical portfolio research (off-topic -> refuse)
+  max_input_chars: 4000
+retrieved_content:
+  treatment: untrusted                # sanitize_untrusted() strips instruction-like spans; evidence is trust-tagged
+tools:
+  allow_list_per_agent: true          # TOOL_ALLOWLIST + authorize_tool() policy gateway
+  max_calls_per_agent: 4

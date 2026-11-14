@@ -1,0 +1,14 @@
+* text=auto
+*.sh text eol=lf
+Caddyfile text eol=lf
+Dockerfile* text eol=lf
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pptx binary
+*.xlsx binary
+*.webm binary
+*.mp4 binary
+*.joblib binary
+*.ico binary

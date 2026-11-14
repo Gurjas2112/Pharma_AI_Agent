@@ -1,0 +1,64 @@
+[project]
+name = "repurpora"
+version = "0.1.0"
+description = "Lazarus Graph: LangGraph multi-agent copilot for pharmaceutical drug repurposing"
+authors = [
+    { name = "w3schools-test", email = "115103812+Gurjas2112@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aegra-api>=0.11.0",
+    "aegra-cli>=0.11.0",
+    "boto3>=1.44.3",
+    "fastapi>=0.162.7",
+    "httpx>=0.28.1",
+    "joblib>=1.6.0",
+    "langchain>=1.5.0",
+    "langchain-community>=0.4.2",
+    "langchain-core>=1.8.0",
+    "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.22",
+    "langsmith>=0.14.17",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "openpyxl>=3.1.5",
+    "pandas>=3.1.1",
+    "psycopg[binary,pool]>=3.3.9",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.3",
+    "pyjwt[crypto]>=2.15.1",
+    "pypdf>=7.1.0",
+    "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.33",
+    "redis>=8.1.0",
+    "reportlab>=5.1.0",
+    "scikit-learn>=1.9.1",
+    "supabase>=2.34.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "moto[logs,s3,secretsmanager]>=5.2.5",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "ruff>=0.17.5",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501", "B008"]  # B008: FastAPI Depends/File idiom

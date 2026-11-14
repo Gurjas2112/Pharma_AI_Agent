@@ -1,0 +1,105 @@
+{
+  "dataset": {
+    "rows": 4000,
+    "positive_rate": 0.555,
+    "synthetic": true
+  },
+  "cv_roc_auc": {
+    "logreg": {
+      "mean": 0.796,
+      "std": 0.0192
+    },
+    "random_forest": {
+      "mean": 0.7808,
+      "std": 0.0191
+    },
+    "grad_boost": {
+      "mean": 0.7833,
+      "std": 0.0207
+    }
+  },
+  "selected_model": "logreg",
+  "test": {
+    "roc_auc": 0.8027,
+    "pr_auc": 0.8243,
+    "f1@0.5": 0.7713,
+    "brier": 0.1797
+  },
+  "overfit_gap_auc": -0.0052,
+  "calibration": [
+    {
+      "pred": 0.09,
+      "obs": 0.057
+    },
+    {
+      "pred": 0.192,
+      "obs": 0.143
+    },
+    {
+      "pred": 0.312,
+      "obs": 0.34
+    },
+    {
+      "pred": 0.434,
+      "obs": 0.411
+    },
+    {
+      "pred": 0.557,
+      "obs": 0.632
+    },
+    {
+      "pred": 0.689,
+      "obs": 0.697
+    },
+    {
+      "pred": 0.813,
+      "obs": 0.827
+    },
+    {
+      "pred": 0.922,
+      "obs": 0.917
+    }
+  ],
+  "feature_importance": [
+    {
+      "feature": "fto_risk",
+      "importance": 0.0967
+    },
+    {
+      "feature": "unmet_need",
+      "importance": 0.0853
+    },
+    {
+      "feature": "evidence_strength",
+      "importance": 0.0663
+    },
+    {
+      "feature": "reformulation",
+      "importance": 0.0236
+    },
+    {
+      "feature": "cagr_pct",
+      "importance": 0.0164
+    },
+    {
+      "feature": "market_usd_mn",
+      "importance": 0.0132
+    },
+    {
+      "feature": "competitors",
+      "importance": 0.0126
+    },
+    {
+      "feature": "import_dependency",
+      "importance": 0.0091
+    },
+    {
+      "feature": "active_trials",
+      "importance": 0.004
+    },
+    {
+      "feature": "patients_mn",
+      "importance": 0.0015
+    }
+  ]
+}

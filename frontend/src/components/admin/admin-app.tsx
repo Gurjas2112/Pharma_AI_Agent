@@ -567,12 +567,23 @@ function KnowledgeTab() {
 
 // ------------------------------------------------------------------- users --
 
+/** PII minimisation: emails are masked unless the admin explicitly reveals them. */
+function maskEmail(email: string | null) {
+  if (!email) return "–";
+  const [local, domain] = email.split("@");
+  if (!domain) return "•••";
+  const parts = domain.split(".");
+  const tld = parts.length > 1 ? parts.pop() : "";
+  return `${local[0]}•••@${parts.join(".")[0]}•••${tld ? "." + tld : ""}`;
+}
+
 function UsersTab() {
   const { data, err, reload, session } = useAdmin<AdminUser[]>("/users");
   const [busy, setBusy] = useState<string | null>(null);
+  const [reveal, setReveal] = useState(false);
   const act = async (u: AdminUser, kind: "role" | "suspend") => {
     const label = kind === "role" ? (u.role === "admin" ? "remove admin from" : "make admin") : u.suspended ? "reactivate" : "suspend";
-    if (!window.confirm(`Really ${label} ${u.email}?`)) return;
+    if (!window.confirm(`Really ${label} ${maskEmail(u.email)}?`)) return;
     setBusy(u.id);
     try {
       if (kind === "role")
@@ -588,12 +599,19 @@ function UsersTab() {
   };
   if (!data) return <Loading err={err} />;
   return (
-    <Card title={`Users (${data.length})`}>
+    <Card
+      title={`Users (${data.length})`}
+      action={
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /> Show full emails
+        </label>
+      }
+    >
       <div data-testid="admin-users">
         <SimpleTable
           cols={["email", "role", "status", "reports", "last sign-in", "actions"]}
           rows={data.map((u) => [
-            u.email,
+            reveal ? u.email : maskEmail(u.email),
             u.role,
             u.suspended ? (
               <span key="s" className="inline-flex items-center gap-1 text-[#d03b3b]"><AlertTriangle className="size-3.5" /> suspended</span>

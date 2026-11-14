@@ -10,6 +10,7 @@ A master agent fans out to market, trade, patent, clinical-trial, internal-RAG a
 <p align="center">
 <a href="https://repurpora.vercel.app"><b>▶ Live demo</b></a> ·
 <a href="app_screenshots_screen_recording/full_walkthrough.mp4">🎬 72-second walkthrough</a> ·
+<a href="app_screenshots_screen_recording/admin_panel_walkthrough.mp4">🛠 admin panel video</a> ·
 <a href="docs/Repurpora_Journey.pptx">📑 5-slide deck</a> ·
 <a href="docs/SPEC.md">📘 Spec</a> ·
 <a href="docs/ARCHITECTURE.md">🏗 Architecture</a>
@@ -56,6 +57,8 @@ AWS emulated through LocalStack).
 <img src="app_screenshots_screen_recording/12_evidence_register_quality_gates_report_link.png" width="49%" alt="Evidence register, quality gates and report links"/>
 <img src="app_screenshots_screen_recording/10_brief_sections_with_citations.png" width="49%" alt="Cited brief"/>
 <img src="app_screenshots_screen_recording/15_guardrail_blocks_prompt_injection.png" width="49%" alt="Guardrail blocking prompt injection"/>
+<img src="app_screenshots_screen_recording/18_admin_overview_kpis_and_charts.png" width="49%" alt="Admin panel overview"/>
+<img src="app_screenshots_screen_recording/27_mcp_client_session_production.png" width="49%" alt="MCP client session against production"/>
 </p>
 
 ---
@@ -365,7 +368,7 @@ frontend/     Next.js landing + auth + Agent Chat UI, Playwright tests
 infra/        Caddy LLM proxy, AWS scripts (LocalStack bootstrap, EC2 provisioning, teardown)
 governance/   AI governance registry (manifest, model card, policies, controls, change log)
 docs/         spec, architecture, runbook, 5-slide deck
-app_screenshots_screen_recording/   16 step screenshots + walkthrough video + sample report
+app_screenshots_screen_recording/   27 step screenshots, research and admin videos, MCP session transcript, sample report
 ```
 
 ## Honest limitations and next steps
